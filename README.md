@@ -57,7 +57,7 @@ evaluate(mandate, { action: "money.refund", amount: { amount: 3000, currency: "U
 
 ## Status
 
-v0.2 is a **draft for public comment**. Thresholds are provisional and will be calibrated against real measured profiles. The reference demo company, the [ZH Rating Desk](../zhc-rating-desk), runs on this spec.
+v0.2 is a **draft for public comment**. Thresholds are provisional and will be calibrated against real measured profiles. The reference demo company, the [ZH Rating Desk](https://zhc.network/rating-desk), runs on this spec.
 
 ## License
 
