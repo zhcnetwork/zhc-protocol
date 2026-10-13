@@ -1,0 +1,37 @@
+{
+  "zhc": "0.2",
+  "id": "mandate:ratingdesk:billing:2026-10",
+  "issuer": "human:accountable",
+  "subject": "agent:billing",
+  "issued_at": "2026-10-01T00:00:00Z",
+  "expires_at": "2027-01-01T00:00:00Z",
+  "scopes": [
+    {
+      "action": "money.refund",
+      "limits": { "per_action": { "amount": 150000, "currency": "USD" }, "per_day": { "amount": 300000, "currency": "USD" } },
+      "require_approval_over": { "amount": 5000, "currency": "USD" }
+    },
+    {
+      "action": "money.vendor_payment",
+      "limits": { "per_action": { "amount": 20000, "currency": "USD" }, "per_month": { "amount": 100000, "currency": "USD" } }
+    },
+    {
+      "action": "network.buy",
+      "limits": { "per_action": { "amount": 20000, "currency": "USD" } },
+      "counterparty": { "min_level": 2, "min_integrity": "B", "min_assurance": "measured" }
+    },
+    { "action": "decision.make", "domain": "finance", "tier_max": "tactical" }
+  ],
+  "escalation": { "to": "human:accountable", "timeout_s": 86400, "on_timeout": "deny" },
+  "progression": [
+    {
+      "when": { "metric": "integrity", "op": ">=", "value": "A" },
+      "then": { "action": "money.refund", "set": { "require_approval_over": { "amount": 50000, "currency": "USD" } } },
+      "note": "Refunds up to $500 no longer need approval once integrity is A."
+    }
+  ],
+  "bindings": {
+    "mpp": { "session_limit": { "amount": 100000, "currency": "USD" } },
+    "x402": { "max_amount": { "amount": 20000, "currency": "USD" } }
+  }
+}

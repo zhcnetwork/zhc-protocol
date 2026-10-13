@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhc.network/schemas/0.2/manifest.schema.json",
+  "title": "ZHC Company Manifest v0.2",
+  "description": "Published at /.well-known/zhc.json. Declares who the company is, who answers for it, and its agents.",
+  "type": "object",
+  "required": ["zhc", "id", "name", "legal", "accountable_human", "charter", "domains", "agents"],
+  "properties": {
+    "zhc": { "const": "0.2" },
+    "id": { "type": "string", "minLength": 3 },
+    "name": { "type": "string" },
+    "url": { "type": "string", "format": "uri" },
+    "legal": {
+      "type": "object",
+      "required": ["entity_name", "jurisdiction"],
+      "properties": {
+        "entity_name": { "type": "string" },
+        "jurisdiction": { "type": "string" },
+        "form": { "type": "string" },
+        "registration_id": { "type": "string" }
+      }
+    },
+    "accountable_human": {
+      "type": "object",
+      "required": ["name", "contact"],
+      "properties": { "name": { "type": "string" }, "contact": { "type": "string" } }
+    },
+    "charter": {
+      "type": "object",
+      "required": ["mission", "reserved_to_human", "prohibited"],
+      "properties": {
+        "mission": { "type": "string" },
+        "reserved_to_human": { "type": "array", "items": { "type": "string" } },
+        "prohibited": { "type": "array", "items": { "type": "string" } },
+        "uri": { "type": "string", "format": "uri" }
+      }
+    },
+    "domains": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "class": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "products": { "type": "integer", "minimum": 0 },
+        "markets": { "type": "integer", "minimum": 0 },
+        "business_models": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "role", "domain"],
+        "properties": {
+          "id": { "type": "string" },
+          "role": { "type": "string" },
+          "domain": { "type": "string" },
+          "agent_card": { "type": "string", "format": "uri" },
+          "erc8004": { "type": "string", "pattern": "^eip155:[0-9]+:0x[0-9a-fA-F]{40}:[0-9]+$" }
+        }
+      }
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "endpoint", "protocol"],
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "endpoint": { "type": "string" },
+          "protocol": { "enum": ["a2a", "mcp", "http"] },
+          "price": { "$ref": "#/$defs/money" },
+          "rails": { "type": "array", "items": { "$ref": "#/$defs/rail" } }
+        }
+      }
+    },
+    "mandates_uri": { "type": "string" },
+    "evidence": {
+      "type": "object",
+      "required": ["uri", "format"],
+      "properties": { "uri": { "type": "string" }, "format": { "const": "zhc-events/0.2" } }
+    },
+    "parent": { "type": "string" },
+    "profile": {
+      "type": "object",
+      "properties": {
+        "claimed": { "type": "string" },
+        "attestations": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "money": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "properties": { "amount": { "type": "integer", "minimum": 0 }, "currency": { "type": "string", "pattern": "^[A-Z0-9]{3,5}$" } }
+    },
+    "rail": { "enum": ["stripe", "x402", "mpp", "ap2", "acp", "ledger", "other"] }
+  }
+}

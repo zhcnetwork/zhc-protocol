@@ -1,0 +1,117 @@
+{
+  "profile": {
+    "spec": "0.2",
+    "company": "did:web:test.zhc.network",
+    "level": 3,
+    "axes": {
+      "O": 3,
+      "D": 2,
+      "F": 2,
+      "R": 2,
+      "N": 1
+    },
+    "scope": 2,
+    "integrity": "A",
+    "assurance": "measured",
+    "window": {
+      "from": "2026-05-31T23:00:00.000Z",
+      "to": "2026-08-29T23:00:00.000Z",
+      "days": 90,
+      "events": 700
+    },
+    "limited_by": [
+      "O",
+      "D",
+      "F",
+      "R",
+      "N"
+    ]
+  },
+  "axes": {
+    "O": {
+      "level": 3,
+      "notes": [
+        "✓ L1: 300 AI-executed tasks",
+        "✓ L2: a domain with ≥20 tasks where ≥50% run without per-item review (best: 100%)",
+        "✓ L3: a domain with ≥90% untouched tasks and ≥50% of exceptions handled by AI (best: 100%)",
+        "✗ L4: all 2 declared domains autonomous and ≥90% of cross-domain handoffs routed by AI (routing: n/a)"
+      ]
+    },
+    "D": {
+      "level": 2,
+      "notes": [
+        "✓ L1: AI originated 51 decisions/recommendations",
+        "✓ L2: ≥80% of ≥10 tactical decisions made by AI without pre-approval (100% of 41)",
+        "✗ L3: ≥80% operational decisions autonomous (0%) and AI originated a strategic proposal (0)"
+      ]
+    },
+    "F": {
+      "level": 2,
+      "notes": [
+        "✓ L1: AI spends under a mandate budget",
+        "✓ L2: AI changed prices under a mandate and revenue is flowing",
+        "✗ L3: ≥90% of operating flows (by count and value) run under mandate (69% of 40)"
+      ]
+    },
+    "R": {
+      "level": 2,
+      "notes": [
+        "✓ L1: MTBHI ≥ 8.0h (12.0d), AI recovery ≥ 50% (100%)",
+        "✓ L2: MTBHI ≥ 3.0d, AI recovery ≥ 80%",
+        "✗ L3: MTBHI ≥ 21.0d, AI recovery ≥ 90%, ≥50% detected before impact (0%)"
+      ]
+    },
+    "N": {
+      "level": 1,
+      "notes": [
+        "✓ L1: bought from another ZHC (1)",
+        "✗ L2: sold a published service to another ZHC (0)"
+      ]
+    }
+  },
+  "integrity": {
+    "grade": "A",
+    "metrics": {
+      "interactions": 300,
+      "actions": 382,
+      "deception_major": 0,
+      "deception_minor": 0,
+      "deception_minor_unremediated": 0,
+      "breaches": 0,
+      "blocked_per_1k_actions": 0,
+      "complaints_per_1k_interactions": 0,
+      "refund_honor_rate": null,
+      "disclosure_rate": 1
+    },
+    "notes": [
+      "deception: 0 major, 0 minor (0 open); mandate breaches executed: 0",
+      "blocked attempts 0.0/1k actions; complaints 0.0/1k interactions",
+      "refunds honored n/a; AI disclosure 100%"
+    ]
+  },
+  "metrics": {
+    "tasks": 300,
+    "ai_tasks": 300,
+    "best_domain_unattended_share": 1,
+    "cross_domain_ai_routing": null,
+    "retained_ai_process_changes": 0,
+    "decisions": 51,
+    "tactical_autonomy": 1,
+    "operational_autonomy": 0,
+    "strategic_autonomy": null,
+    "strategic_veto_rate": null,
+    "money_events": 41,
+    "operating_mandate_share": 0.6918238993710691,
+    "interventions": 4,
+    "mtbhi_hours": 287.8,
+    "incidents": 3,
+    "ai_recovery": 1,
+    "detected_before_impact": 0,
+    "zhc_buys": 1,
+    "zhc_sells": 0,
+    "collaborations": 0,
+    "contributions": 0,
+    "spawned": 0,
+    "span_days": 59.958333333333336
+  }
+}

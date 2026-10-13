@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhc.network/schemas/0.2/attestation.schema.json",
+  "title": "ZH Attestation v0.2",
+  "description": "A validator-signed ZH profile over a specific evidence head. Ed25519 over canonical JSON of payload.",
+  "type": "object",
+  "required": [
+    "payload",
+    "signature",
+    "public_key"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "required": [
+        "type",
+        "spec",
+        "method",
+        "issuer",
+        "subject",
+        "profile",
+        "evidence",
+        "issued_at",
+        "expires_at"
+      ],
+      "properties": {
+        "type": {
+          "const": "ZHAttestation"
+        },
+        "spec": {
+          "const": "0.2"
+        },
+        "method": {
+          "type": "string"
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "object",
+          "required": [
+            "spec",
+            "company",
+            "level",
+            "axes",
+            "scope",
+            "integrity",
+            "assurance"
+          ],
+          "properties": {
+            "spec": {
+              "const": "0.2"
+            },
+            "company": {
+              "type": "string"
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "axes": {
+              "type": "object",
+              "required": [
+                "O",
+                "D",
+                "F",
+                "R",
+                "N"
+              ],
+              "properties": {
+                "O": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5
+                },
+                "D": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5
+                },
+                "F": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5
+                },
+                "R": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5
+                },
+                "N": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5
+                }
+              }
+            },
+            "scope": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "integrity": {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "U"
+              ]
+            },
+            "assurance": {
+              "enum": [
+                "claimed",
+                "provisional",
+                "measured",
+                "attested"
+              ]
+            },
+            "window": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "days": {
+                  "type": "number"
+                },
+                "events": {
+                  "type": "integer"
+                }
+              }
+            },
+            "limited_by": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "O",
+                  "D",
+                  "F",
+                  "R",
+                  "N"
+                ]
+              }
+            }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "required": [
+            "head",
+            "events",
+            "from",
+            "to"
+          ],
+          "properties": {
+            "head": {
+              "type": "string"
+            },
+            "events": {
+              "type": "integer"
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          }
+        },
+        "issued_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "signature": {
+      "type": "string"
+    },
+    "public_key": {
+      "type": "string"
+    }
+  }
+}

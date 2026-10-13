@@ -1,0 +1,566 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhc.network/schemas/0.2/event.schema.json",
+  "title": "ZHC Evidence Event v0.2",
+  "description": "One line of a hash-chained evidence log (JSON Lines).",
+  "type": "object",
+  "required": [
+    "v",
+    "id",
+    "ts",
+    "company",
+    "type"
+  ],
+  "properties": {
+    "v": {
+      "const": "0.2"
+    },
+    "id": {
+      "type": "string"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "company": {
+      "type": "string"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "domain": {
+      "type": "string"
+    },
+    "mandate": {
+      "type": "string"
+    },
+    "prev": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "type": {
+      "enum": [
+        "task.completed",
+        "decision.made",
+        "money.moved",
+        "human.intervention",
+        "incident.resolved",
+        "process.changed",
+        "network.transaction",
+        "network.collaboration",
+        "network.contribution",
+        "company.spawned",
+        "interaction",
+        "conduct.complaint",
+        "conduct.refund_request",
+        "conduct.mandate_blocked",
+        "conduct.mandate_breach",
+        "conduct.deception"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "actor",
+        "touch"
+      ],
+      "properties": {
+        "type": {
+          "const": "task.completed"
+        },
+        "actor": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "touch": {
+          "enum": [
+            "none",
+            "batch_review",
+            "item_review",
+            "approval"
+          ]
+        },
+        "exception": {
+          "type": "boolean"
+        },
+        "exception_handled_by": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "cross_domain": {
+          "type": "boolean"
+        },
+        "routed_by": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "tier",
+        "origin",
+        "decided_by",
+        "approval"
+      ],
+      "properties": {
+        "type": {
+          "const": "decision.made"
+        },
+        "tier": {
+          "enum": [
+            "tactical",
+            "operational",
+            "strategic",
+            "charter"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "decided_by": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "approval": {
+          "enum": [
+            "none",
+            "pre",
+            "post_veto_window"
+          ]
+        },
+        "vetoed": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "direction",
+        "category",
+        "money",
+        "authorized_by"
+      ],
+      "properties": {
+        "type": {
+          "const": "money.moved"
+        },
+        "direction": {
+          "enum": [
+            "in",
+            "out",
+            "none"
+          ]
+        },
+        "category": {
+          "enum": [
+            "spend",
+            "pricing_change",
+            "revenue",
+            "vendor_payment",
+            "refund",
+            "reserve",
+            "investment",
+            "distribution"
+          ]
+        },
+        "money": {
+          "$ref": "#/$defs/money"
+        },
+        "authorized_by": {
+          "enum": [
+            "mandate",
+            "human_approval",
+            "human"
+          ]
+        },
+        "rail": {
+          "enum": [
+            "stripe",
+            "x402",
+            "mpp",
+            "ap2",
+            "acp",
+            "ledger",
+            "other"
+          ]
+        },
+        "product": {
+          "type": "string"
+        },
+        "counterparty": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "kind"
+      ],
+      "properties": {
+        "type": {
+          "const": "human.intervention"
+        },
+        "kind": {
+          "enum": [
+            "fix",
+            "override",
+            "kill_switch",
+            "routine"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "severity",
+        "detected_by",
+        "detected_before_impact",
+        "resolved_by",
+        "duration_s"
+      ],
+      "properties": {
+        "type": {
+          "const": "incident.resolved"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "detected_by": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "detected_before_impact": {
+          "type": "boolean"
+        },
+        "resolved_by": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "duration_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "recurrence_of": {
+          "type": "string"
+        },
+        "fix_retained": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "initiated_by",
+        "change",
+        "retained"
+      ],
+      "properties": {
+        "type": {
+          "const": "process.changed"
+        },
+        "initiated_by": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "change": {
+          "enum": [
+            "workflow",
+            "role_created",
+            "role_retired",
+            "policy"
+          ]
+        },
+        "retained": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "counterparty",
+        "counterparty_is_zhc",
+        "direction",
+        "money"
+      ],
+      "properties": {
+        "type": {
+          "const": "network.transaction"
+        },
+        "counterparty": {
+          "type": "string"
+        },
+        "counterparty_is_zhc": {
+          "type": "boolean"
+        },
+        "direction": {
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "money": {
+          "$ref": "#/$defs/money"
+        },
+        "service": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "counterparty",
+        "contract",
+        "milestones_completed"
+      ],
+      "properties": {
+        "type": {
+          "const": "network.collaboration"
+        },
+        "counterparty": {
+          "type": "string"
+        },
+        "contract": {
+          "type": "string"
+        },
+        "milestones_completed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "kind"
+      ],
+      "properties": {
+        "type": {
+          "const": "network.contribution"
+        },
+        "kind": {
+          "enum": [
+            "feedback",
+            "attestation",
+            "validation",
+            "insight"
+          ]
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "child",
+        "child_level"
+      ],
+      "properties": {
+        "type": {
+          "const": "company.spawned"
+        },
+        "child": {
+          "type": "string"
+        },
+        "child_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "channel",
+        "ai_disclosed"
+      ],
+      "properties": {
+        "type": {
+          "const": "interaction"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "ai_disclosed": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "severity"
+      ],
+      "properties": {
+        "type": {
+          "const": "conduct.complaint"
+        },
+        "severity": {
+          "enum": [
+            "minor",
+            "major"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "eligible",
+        "honored"
+      ],
+      "properties": {
+        "type": {
+          "const": "conduct.refund_request"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "honored": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "action",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "conduct.mandate_blocked"
+        },
+        "action": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "action",
+        "remediated"
+      ],
+      "properties": {
+        "type": {
+          "const": "conduct.mandate_breach"
+        },
+        "action": {
+          "type": "string"
+        },
+        "remediated": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "severity",
+        "remediated"
+      ],
+      "properties": {
+        "type": {
+          "const": "conduct.deception"
+        },
+        "severity": {
+          "enum": [
+            "minor",
+            "major"
+          ]
+        },
+        "remediated": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "money": {
+      "type": "object",
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

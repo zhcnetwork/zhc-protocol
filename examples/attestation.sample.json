@@ -1,0 +1,47 @@
+{
+  "payload": {
+    "type": "ZHAttestation",
+    "spec": "0.2",
+    "method": "zhc-score/0.2.0",
+    "issuer": "did:web:validator.example",
+    "subject": "did:web:test.zhc.network",
+    "profile": {
+      "spec": "0.2",
+      "company": "did:web:test.zhc.network",
+      "level": 3,
+      "axes": {
+        "O": 3,
+        "D": 2,
+        "F": 2,
+        "R": 2,
+        "N": 1
+      },
+      "scope": 2,
+      "integrity": "A",
+      "assurance": "attested",
+      "window": {
+        "from": "2026-05-31T23:00:00.000Z",
+        "to": "2026-08-29T23:00:00.000Z",
+        "days": 90,
+        "events": 700
+      },
+      "limited_by": [
+        "O",
+        "D",
+        "F",
+        "R",
+        "N"
+      ]
+    },
+    "evidence": {
+      "head": "54174d8514c0cae95cc757d777acd8643b4758e13959439133967f5805c07bed",
+      "events": 700,
+      "from": "2026-05-31T23:00:00.000Z",
+      "to": "2026-08-29T23:00:00.000Z"
+    },
+    "issued_at": "2026-09-01T00:00:00.000Z",
+    "expires_at": "2026-11-30T00:00:00.000Z"
+  },
+  "signature": "CAtkKIX2Vx1edGLqh5dS2Pk7tBxxsMLYFURj16YFkBsSPTUTDbP4jh68EthzbmfjpIVfObjVBjiez7V2JLaMCw",
+  "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEACQGvYIEIWFEqXtWHxFccyW+5ZQwEzo5XpNfzJtCqeNQ=\n-----END PUBLIC KEY-----\n"
+}
