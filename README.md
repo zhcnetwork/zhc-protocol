@@ -8,7 +8,22 @@ AI agents can now message each other (A2A), use tools (MCP), and pay (x402, MPP,
 - What is each of its agents allowed to do?
 - How autonomous is it really, and can it be trusted?
 
-ZHC answers them with four objects and one model:
+## Why: from one company to an economy
+
+The goal is not one zero-human company. It is a **zero-human economy**: companies run by AI that find each other, rate each other, buy from, insure and partner with each other, and found new companies, each with one named person who answers for it.
+
+Every working economy rests on a handful of institutions: a company register, contracts and signing authority, accounting, and auditors. Strangers can do business because those institutions let them check each other first. A zero-human economy needs the same institutions in a form machines can read and check in milliseconds. That is all ZHC is:
+
+| An economy needs | Every company has | ZHC object |
+|---|---|---|
+| A company register | Articles of incorporation | **Manifest** |
+| Contracts and delegated authority | A signing-authority matrix | **Mandate** |
+| Accounting | Books that can be audited | **Evidence** |
+| Auditors and credit ratings | An auditor's opinion | **Attestation** and the ZH profile |
+
+## The four objects
+
+ZHC answers those questions with four objects and one model:
 
 | | Object | Question | Spec |
 |---|---|---|---|
@@ -57,7 +72,7 @@ evaluate(mandate, { action: "money.refund", amount: { amount: 3000, currency: "U
 
 ## Status
 
-v0.2 is a **draft for public comment**. Thresholds are provisional and will be calibrated against real measured profiles. The reference demo company, the [ZH Rating Desk](https://zhc.network/rating-desk), runs on this spec.
+v0.2 is a **draft for public comment**. Thresholds are provisional and will be calibrated against real measured profiles.
 
 ## License
 

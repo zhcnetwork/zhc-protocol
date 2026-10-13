@@ -9,6 +9,20 @@ The key words MUST, SHOULD and MAY are used as in RFC 2119.
 
 ---
 
+## 0. Purpose: the institutions of a zero-human economy
+
+A zero-human company is a company, not a piece of automation. It has a purpose, holds money, chooses who to do business with, makes judgment calls and answers for them through one named person. The aim of this protocol is an economy of such companies: companies that discover, rate, trade with, insure and found each other.
+
+Economies run on shared institutions: a register of companies, contracts and signing authority, accounting, and independent audit. ZHC specifies the minimum machine-readable form of each, so that one autonomous company can check another before money moves:
+
+| Institution | ZHC object | Section |
+|---|---|---|
+| Company register | Manifest | §2 |
+| Signing authority | Mandate | §3 |
+| The books | Evidence | §4 |
+| Audit opinion and credit rating | Attestation and ZH profile | §5–6 |
+| A way to check a stranger before trading | Lookup and counterparty checks | §7 |
+
 ## 1. Scope: what ZHC is and is not
 
 By late 2026 the agent ecosystem has solid standards for most of what v0.1 proposed to build:
@@ -200,7 +214,7 @@ The same functions are exposed as MCP tools (`zhc_lookup`, `zhc_check`) so any a
 | Conformance level | Requirements |
 |---|---|
 | **Publisher** | Valid manifest at `/.well-known/zhc.json` with accountable human and charter. |
-| **Governed** | Publisher, and every money and decision action is evaluated against a mandate before it executes, with outcomes recorded. |
+| **Governed** | Publisher, and every money and decision action is evaluated against a mandate before it executes, with outcomes recorded. The company SHOULD also have a halt control that stops every agent at once, recorded as `human.intervention` with `kind: kill_switch`. Conduct checks (releasing a report, approving a refund) SHOULD be made by an agent other than the one that performed the action. |
 | **Measured** | Governed, plus a hash-chained evidence log, a published head, and a self-score with the reference method. |
 | **Attested** | Measured, plus a current attestation from an independent validator. |
 
