@@ -62,6 +62,8 @@ export interface TaskCompleted extends EventBase {
 
 export interface DecisionMade extends EventBase {
   type: "decision.made";
+  /** For decisions escalated to a human: what the human decided. */
+  outcome?: "approved" | "denied";
   tier: DecisionTier;
   /** Who originated the option that was chosen. */
   origin: Actor;
@@ -184,6 +186,16 @@ export interface ConductDeception extends EventBase {
   summary?: string;
 }
 
+export interface MandateChanged extends EventBase {
+  type: "mandate.changed";
+  /** Mandate id that was issued, widened, narrowed or revoked. */
+  subject_mandate: string;
+  change: "issued" | "widened" | "narrowed" | "revoked";
+  /** progression = a progression rule fired; issuer = the issuer changed it by hand. */
+  cause: "progression" | "issuer";
+  summary?: string;
+}
+
 export type ZHCEvent =
   | TaskCompleted
   | DecisionMade
@@ -200,7 +212,8 @@ export type ZHCEvent =
   | ConductRefund
   | ConductMandateBlocked
   | ConductMandateBreach
-  | ConductDeception;
+  | ConductDeception
+  | MandateChanged;
 
 export type EventType = ZHCEvent["type"];
 
@@ -259,6 +272,8 @@ export interface Manifest {
   agents: ManifestAgent[];
   services?: ManifestService[];
   mandates_uri?: string;
+  /** Public keys this company signs attestations with, if it acts as a validator. */
+  validator_keys?: { id: string; alg: "Ed25519"; public_key_pem: string }[];
   evidence?: { uri: string; format: "zhc-events/0.2" };
   parent?: string;
   profile?: { claimed?: string; attestations?: string[] };

@@ -59,7 +59,8 @@
         "conduct.refund_request",
         "conduct.mandate_blocked",
         "conduct.mandate_breach",
-        "conduct.deception"
+        "conduct.deception",
+        "mandate.changed"
       ]
     }
   },
@@ -154,6 +155,12 @@
         },
         "summary": {
           "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "denied"
+          ]
         }
       }
     },
@@ -538,6 +545,40 @@
         },
         "remediated": {
           "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "subject_mandate",
+        "change",
+        "cause"
+      ],
+      "properties": {
+        "type": {
+          "const": "mandate.changed"
+        },
+        "subject_mandate": {
+          "type": "string"
+        },
+        "change": {
+          "enum": [
+            "issued",
+            "widened",
+            "narrowed",
+            "revoked"
+          ]
+        },
+        "cause": {
+          "enum": [
+            "progression",
+            "issuer"
+          ]
         },
         "summary": {
           "type": "string"

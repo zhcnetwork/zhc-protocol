@@ -4,77 +4,248 @@
   "title": "ZHC Mandate v0.2",
   "description": "A signed grant of business authority from an issuer to an agent.",
   "type": "object",
-  "required": ["zhc", "id", "issuer", "subject", "issued_at", "expires_at", "scopes", "escalation"],
+  "required": [
+    "zhc",
+    "id",
+    "issuer",
+    "subject",
+    "issued_at",
+    "expires_at",
+    "scopes",
+    "escalation"
+  ],
   "properties": {
-    "zhc": { "const": "0.2" },
-    "id": { "type": "string" },
-    "issuer": { "type": "string" },
-    "subject": { "type": "string" },
-    "parent": { "type": "string" },
-    "issued_at": { "type": "string", "format": "date-time" },
-    "expires_at": { "type": "string", "format": "date-time" },
-    "revoked": { "type": "boolean" },
-    "scopes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scope" } },
+    "zhc": {
+      "const": "0.2"
+    },
+    "id": {
+      "type": "string"
+    },
+    "issuer": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "parent": {
+      "type": "string"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "revoked": {
+      "type": "boolean"
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/scope"
+      }
+    },
     "escalation": {
       "type": "object",
-      "required": ["to", "timeout_s", "on_timeout"],
+      "required": [
+        "to",
+        "timeout_s",
+        "on_timeout"
+      ],
       "properties": {
-        "to": { "type": "string" },
-        "timeout_s": { "type": "integer", "minimum": 0 },
-        "on_timeout": { "enum": ["deny", "allow"] }
+        "to": {
+          "type": "string"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "on_timeout": {
+          "enum": [
+            "deny",
+            "allow"
+          ]
+        }
       }
     },
     "progression": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["when", "then"],
+        "required": [
+          "when",
+          "then"
+        ],
         "properties": {
           "when": {
-            "type": "object",
-            "required": ["metric", "op", "value"],
-            "properties": { "metric": { "type": "string" }, "op": { "enum": [">=", "<=", "=="] }, "value": { "type": ["number", "string"] } }
+            "oneOf": [
+              {
+                "$ref": "#/$defs/condition"
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/condition"
+                }
+              }
+            ]
           },
           "then": {
             "type": "object",
-            "required": ["action", "set"],
-            "properties": { "action": { "$ref": "#/$defs/action" }, "set": { "type": "object" } }
+            "required": [
+              "action",
+              "set"
+            ],
+            "properties": {
+              "action": {
+                "$ref": "#/$defs/action"
+              },
+              "set": {
+                "type": "object"
+              },
+              "domain": {
+                "type": "string"
+              }
+            }
           },
-          "note": { "type": "string" }
+          "note": {
+            "type": "string"
+          }
         }
       }
     },
-    "bindings": { "type": "object" }
+    "bindings": {
+      "type": "object"
+    }
   },
   "$defs": {
     "money": {
       "type": "object",
-      "required": ["amount", "currency"],
-      "properties": { "amount": { "type": "integer", "minimum": 0 }, "currency": { "type": "string" } }
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string"
+        }
+      }
     },
     "action": {
-      "enum": ["money.spend", "money.refund", "money.vendor_payment", "money.reserve", "pricing.change", "decision.make", "service.deliver", "network.buy", "network.sell", "process.change", "attestation.issue"]
+      "enum": [
+        "money.spend",
+        "money.collect",
+        "money.refund",
+        "money.vendor_payment",
+        "money.reserve",
+        "pricing.change",
+        "decision.make",
+        "service.deliver",
+        "network.buy",
+        "network.sell",
+        "process.change",
+        "attestation.issue"
+      ]
     },
     "scope": {
       "type": "object",
-      "required": ["action"],
+      "required": [
+        "action"
+      ],
       "properties": {
-        "action": { "$ref": "#/$defs/action" },
-        "domain": { "type": "string" },
-        "tier_max": { "enum": ["tactical", "operational", "strategic"] },
+        "action": {
+          "$ref": "#/$defs/action"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "tier_max": {
+          "enum": [
+            "tactical",
+            "operational",
+            "strategic"
+          ]
+        },
         "limits": {
           "type": "object",
-          "properties": { "per_action": { "$ref": "#/$defs/money" }, "per_day": { "$ref": "#/$defs/money" }, "per_month": { "$ref": "#/$defs/money" } }
+          "properties": {
+            "per_action": {
+              "$ref": "#/$defs/money"
+            },
+            "per_day": {
+              "$ref": "#/$defs/money"
+            },
+            "per_month": {
+              "$ref": "#/$defs/money"
+            }
+          }
         },
-        "require_approval_over": { "$ref": "#/$defs/money" },
-        "max_relative_change": { "type": "number", "minimum": 0 },
+        "require_approval_over": {
+          "$ref": "#/$defs/money"
+        },
+        "max_relative_change": {
+          "type": "number",
+          "minimum": 0
+        },
         "counterparty": {
           "type": "object",
           "properties": {
-            "min_level": { "type": "integer", "minimum": 0, "maximum": 5 },
-            "min_integrity": { "enum": ["A", "B", "C", "D"] },
-            "min_assurance": { "enum": ["claimed", "provisional", "measured", "attested"] }
+            "min_level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "min_integrity": {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D"
+              ]
+            },
+            "min_assurance": {
+              "enum": [
+                "claimed",
+                "provisional",
+                "measured",
+                "attested"
+              ]
+            }
           }
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "required": [
+        "metric",
+        "op",
+        "value"
+      ],
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            ">=",
+            "<=",
+            "=="
+          ]
+        },
+        "value": {
+          "type": [
+            "number",
+            "string"
+          ]
         }
       }
     }

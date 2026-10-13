@@ -25,7 +25,7 @@ export interface ScoreOptions {
   asOf?: string;
   /** Rolling window in days. Defaults to THRESHOLDS.window_days (90). */
   windowDays?: number;
-  /** Set by the caller after verifying the hash chain (see evidence.ts). */
+  /** Set to true by the caller after verifying the hash chain (see evidence.ts). Unverified evidence is never "measured". */
   chainVerified?: boolean;
   /** Set when a valid, unexpired attestation covers this window. */
   attested?: boolean;
@@ -59,7 +59,9 @@ function scoreO(events: ZHCEvent[], manifest: Manifest | undefined, windowDays: 
   const byDomain = new Map<string, TaskCompleted[]>();
   for (const t of tasks) {
     const d = t.domain ?? "default";
-    byDomain.set(d, [...(byDomain.get(d) ?? []), t]);
+    const list = byDomain.get(d);
+    if (list) list.push(t);
+    else byDomain.set(d, [t]);
   }
   const stats = [...byDomain.entries()].map(([domain, ts]) => {
     const n = ts.length;
@@ -78,12 +80,11 @@ function scoreO(events: ZHCEvent[], manifest: Manifest | undefined, windowDays: 
   const sized = stats.filter((s) => s.n >= T.min_domain_tasks);
   const declared = manifest?.domains?.length ? manifest.domains : [...byDomain.keys()];
   const autonomousDomain = (s: (typeof stats)[number]) => s.unattended >= T.unattended_share && s.aiExceptions >= T.ai_exception_share;
-  const allDomainsAutonomous =
-    declared.length >= 2 &&
-    declared.every((d) => {
-      const s = stats.find((x) => x.domain === d);
-      return !!s && s.n >= T.min_domain_tasks && autonomousDomain(s);
-    });
+  const notAutonomous = declared.filter((d) => {
+    const s = stats.find((x) => x.domain === d);
+    return !s || s.n < T.min_domain_tasks || !autonomousDomain(s);
+  });
+  const allDomainsAutonomous = declared.length >= 2 && notAutonomous.length === 0;
   const cross = tasks.filter((t) => t.cross_domain);
   const crossAi = share(cross.filter((t) => t.routed_by === "ai").length, cross.length);
   const changes = ofType(events, "process.changed").filter((c) => c.initiated_by === "ai" && c.retained);
@@ -105,7 +106,7 @@ function scoreO(events: ZHCEvent[], manifest: Manifest | undefined, windowDays: 
     {
       level: 4,
       ok: allDomainsAutonomous && crossAi !== null && crossAi >= T.ai_routing_share,
-      note: `all ${declared.length} declared domains autonomous and ≥${pct(T.ai_routing_share)} of cross-domain handoffs routed by AI (routing: ${pct(crossAi)})`,
+      note: `all ${declared.length} declared domains autonomous (${notAutonomous.length ? `not yet: ${notAutonomous.join(", ")}` : "all are"}) and ≥${pct(T.ai_routing_share)} of cross-domain handoffs routed by AI (${pct(crossAi)})`,
     },
     {
       level: 5,
@@ -197,10 +198,10 @@ function scoreR(events: ZHCEvent[], spanDays: number): { result: AxisResult; met
   const r4 = (fixRetained ?? 0) >= T.fix_retained_share && (recurrence ?? 1) <= T.max_recurrence_rate;
   const result = ladder([
     { level: 1, ok: hrs(1) && recovers(1), note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[1])} (${fmtH(mtbhiHours)}), AI recovery ≥ ${pct(T.ai_recovery[1])} (${pct(aiRecovery)})` },
-    { level: 2, ok: hrs(2) && recovers(2), note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[2])}, AI recovery ≥ ${pct(T.ai_recovery[2])}` },
-    { level: 3, ok: hrs(3) && recovers(3) && r3, note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[3])}, AI recovery ≥ ${pct(T.ai_recovery[3])}, ≥${pct(T.before_impact_share)} detected before impact (${pct(beforeImpact)})` },
-    { level: 4, ok: hrs(4) && recovers(4) && r3 && r4, note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[4])}, fixes retained ≥ ${pct(T.fix_retained_share)} (${pct(fixRetained)}), recurrence ≤ ${pct(T.max_recurrence_rate)} (${pct(recurrence)})` },
-    { level: 5, ok: hrs(5) && recovers(5) && r3 && r4, note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[5])}` },
+    { level: 2, ok: hrs(2) && recovers(2), note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[2])} (${fmtH(mtbhiHours)}), AI recovery ≥ ${pct(T.ai_recovery[2])} (${pct(aiRecovery)})` },
+    { level: 3, ok: hrs(3) && recovers(3) && r3, note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[3])} (${fmtH(mtbhiHours)}), AI recovery ≥ ${pct(T.ai_recovery[3])} (${pct(aiRecovery)}), ≥${pct(T.before_impact_share)} detected before impact (${pct(beforeImpact)})` },
+    { level: 4, ok: hrs(4) && recovers(4) && r3 && r4, note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[4])} (${fmtH(mtbhiHours)}), fixes retained ≥ ${pct(T.fix_retained_share)} (${pct(fixRetained)}), recurrence ≤ ${pct(T.max_recurrence_rate)} (${pct(recurrence)})` },
+    { level: 5, ok: hrs(5) && recovers(5) && r3 && r4, note: `MTBHI ≥ ${fmtH(T.mtbhi_hours[5])} (${fmtH(mtbhiHours)})` },
   ]);
   return { result, metrics: { interventions: interventions.length, mtbhi_hours: mtbhiHours, incidents: incidents.length, ai_recovery: aiRecovery, detected_before_impact: beforeImpact } };
 }
@@ -321,7 +322,7 @@ export function score(allEvents: ZHCEvent[], manifest?: Manifest, opts: ScoreOpt
   const { level, limited_by } = compositeLevel(levels);
 
   const enough = spanDays >= THRESHOLDS.measured_min_days && events.length >= THRESHOLDS.measured_min_events;
-  let assurance: Assurance = enough && opts.chainVerified !== false ? "measured" : "provisional";
+  let assurance: Assurance = enough && opts.chainVerified === true ? "measured" : "provisional";
   if (assurance === "measured" && opts.attested) assurance = "attested";
 
   return {

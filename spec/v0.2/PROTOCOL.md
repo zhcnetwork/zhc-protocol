@@ -58,6 +58,7 @@ A ZHC MUST publish a manifest at `https://{domain}/.well-known/zhc.json` conform
 | `domains` | MUST | Business domains the company operates (used by the O axis). |
 | `scope` | SHOULD | Scope class or counts of products, markets, business models. |
 | `agents[]` | MUST | Each agent: `id`, `role`, `domain`; SHOULD link its A2A `agent_card`; MAY link an `erc8004` identity. |
+| `validator_keys[]` | MUST if it issues attestations | Ed25519 public keys (`id`, `alg`, `public_key_pem`) that verifiers pin attestation signatures to. |
 | `services[]` | SHOULD | Services offered to others: endpoint, protocol (`a2a` / `mcp` / `http`), price, accepted rails. Required for N2+. |
 | `mandates_uri` | SHOULD | Where mandates (or their public summaries) are published. |
 | `evidence` | SHOULD | Where the evidence head (and, if public, the log) is published. |
@@ -74,7 +75,7 @@ A mandate is a signed grant of business authority from an **issuer** (the accoun
 
 A mandate has:
 - **validity:** `issued_at`, `expires_at`, `revoked`
-- **scopes:** each grants one action (`money.spend`, `money.refund`, `money.vendor_payment`, `money.reserve`, `pricing.change`, `decision.make`, `service.deliver`, `network.buy`, `network.sell`, `process.change`, `attestation.issue`), optionally limited to a domain, with:
+- **scopes:** each grants one action (`money.spend`, `money.collect`, `money.refund`, `money.vendor_payment`, `money.reserve`, `pricing.change`, `decision.make`, `service.deliver`, `network.buy`, `network.sell`, `process.change`, `attestation.issue`), optionally limited to a domain, with:
   - `limits.per_action | per_day | per_month`: hard caps
   - `require_approval_over`: an approval band below the hard cap
   - `tier_max`: the highest decision tier the agent may decide alone
@@ -90,27 +91,32 @@ An implementation MUST evaluate every governed action against the subject's mand
 
 - `allow`
 - `require_approval` (escalate; record the human's decision as evidence)
-- `deny`, recorded as `conduct.mandate_blocked`
+- `deny` with a reason code (`revoked`, `validity`, `scope`, `charter`, `change`, `counterparty`, `limit`), recorded as `conduct.mandate_blocked`. Denials with code `counterparty` are screening outcomes, not conduct by the agent, and MUST NOT be recorded as `conduct.mandate_blocked`. Agents SHOULD screen counterparties with a lookup (§7) before requesting the action.
 
-Rules, in order:
+Rules, in order. Hard limits are checked before approval bands, so a human approval can never authorize something the mandate forbids:
 1. A revoked or expired mandate denies everything.
 2. With no matching scope, the action is denied.
 3. Charter-tier decisions are always denied to agents.
-4. A decision above `tier_max` requires approval.
-5. A price change beyond `max_relative_change` is denied.
-6. If the scope requires a counterparty check and none was supplied, or the counterparty is below the minimum, the action is denied.
-7. Daily or monthly limits exceeded: denied. Over `per_action`: denied. Over `require_approval_over`: requires approval.
+4. A price change beyond `max_relative_change` is denied.
+5. If the scope requires a counterparty check and none was supplied, or the counterparty is below the minimum, the action is denied.
+6. Daily or monthly limits exceeded, or the amount is over `per_action`: denied.
+7. A decision above `tier_max`, or an amount over `require_approval_over`: requires approval. The human's decision is recorded as a `decision.made` event with `outcome`.
 8. Otherwise the action is allowed.
 
 A limit in one currency never authorizes an amount in another.
 
 ### 3.2 Delegation
 
-An agent MAY issue a mandate to another agent. A delegated mandate MUST be an **attenuation** of its parent: it grants no action the parent lacks, it has no higher limit or tier, and it does not outlive the parent (`isAttenuationOf()`).
+An agent MAY issue a mandate to another agent. A delegated mandate MUST be an **attenuation** of its parent (`isAttenuationOf()`). It:
+- grants no action the parent lacks;
+- has no higher limit, approval threshold, tier or relative-change limit;
+- has no weaker counterparty requirement;
+- does not outlive its parent;
+- cannot be issued from a revoked parent.
 
 ### 3.3 Progressive autonomy
 
-`progression` rules reference metrics from the company's latest score report (e.g. `integrity >= A`, `refund_honor_rate >= 0.98`). When a rule fires, the controller produces a widened mandate that the issuer re-signs. The issuer MAY pre-authorize automatic re-signing for specific rules. This is how "the human's surface area shrinks as trust grows" becomes an auditable mechanism rather than a promise.
+`progression` rules reference metrics from the company's latest score report (e.g. `integrity >= A`, `refund_honor_rate >= 0.98`). A rule can hold one condition or a list that must all hold, and can target a scope by action and domain. When a rule fires, the controller produces a widened mandate that the issuer re-signs. The issuer MAY pre-authorize automatic re-signing for specific rules. Every change to a mandate is recorded as a `mandate.changed` event. This is how "the human's surface area shrinks as trust grows" becomes an auditable mechanism rather than a promise.
 
 ### 3.4 Payment rail bindings
 
@@ -140,11 +146,12 @@ A ZHC that wants a measured or attested profile MUST keep an append-only evidenc
 | `process.changed` | initiator, change type, retained | O5 |
 | `network.transaction` / `network.collaboration` / `network.contribution` / `company.spawned` | ZHC counterparties | N |
 | `interaction` | channel, AI disclosed | Integrity |
+| `mandate.changed` | mandate issued, widened, narrowed or revoked, and whether by progression or by the issuer | Audit trail |
 | `conduct.complaint` / `conduct.refund_request` / `conduct.mandate_blocked` / `conduct.mandate_breach` / `conduct.deception` | conduct | Integrity |
 
 ### 4.2 Integrity of the log
 
-Each event MUST carry `prev` (the previous event's hash) and `hash` = SHA-256 of the canonical JSON of the event without `hash` (keys sorted recursively, no whitespace, undefined omitted). The latest hash is the **evidence head**. A company SHOULD publish its head at least daily (in its manifest's `evidence.uri`, and MAY anchor it on a public chain) so it cannot later rewrite history.
+Each event MUST carry `prev` (the previous event's hash) and `hash` = SHA-256 of the canonical JSON of the event without `hash` (keys sorted recursively, no whitespace, undefined omitted). The latest hash is the **evidence head**. A company SHOULD publish its head at least daily (in its manifest's `evidence.uri`, and MAY anchor it on a public chain) so it cannot later rewrite history. The hash chain alone does not stop a company from rewriting and re-sealing its entire log; only a head published earlier, or held by a validator, does.
 
 ### 4.3 Who records what
 
@@ -169,13 +176,14 @@ Any party holding the same events and manifest MUST be able to reproduce the sam
 A validator that has (a) verified the hash chain, (b) sampled human and conduct evidence against external sources, and (c) re-run the scorer MAY issue an attestation. Schema: [`schemas/attestation.schema.json`](../../schemas/attestation.schema.json).
 
 - The payload binds issuer, subject, profile, method version, evidence head, event count, window, issue time and expiry (90 days).
-- Signature: Ed25519 over the canonical JSON of the payload (base64url). The issuer's public key MUST be listed in the issuer's own manifest or DID document.
+- Only `measured` profiles may be attested.
+- Signature: Ed25519 over the canonical JSON of the payload (base64url). The issuer's public key MUST be listed in the issuer's manifest (`validator_keys`) or DID document.
 - The attestation MAY be re-wrapped as a W3C Verifiable Credential and/or recorded in an ERC-8004 Validation Registry (`requestHash` = evidence head, response = profile id).
 - Validators MUST NOT attest their own company. A ZHC's self-score is at most `measured`.
 
 ## 7. Lookup and counterparty checks
 
-A ZHC registry (zhc.network operates one; anyone may run one) exposes:
+A ZHC registry exposes the interface below. zhc.network intends to operate a public registry; anyone may run one.
 
 ```
 GET  /v0.2/companies/{id}            → manifest, latest profile, attestations, evidence head

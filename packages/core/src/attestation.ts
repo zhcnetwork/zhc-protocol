@@ -43,6 +43,8 @@ export function issueAttestation(args: {
 }): Attestation {
   const { profile } = args;
   if (!profile.window) throw new Error("profile has no evidence window");
+  if (profile.assurance !== "measured") throw new Error(`only measured profiles can be attested (got ${profile.assurance})`);
+  if (profile.company === args.issuer) throw new Error("validators must not attest their own company");
   const issued = args.now ? new Date(args.now) : new Date();
   const expires = new Date(issued.getTime() + THRESHOLDS.attestation_ttl_days * 86_400_000);
   const payload: AttestationPayload = {

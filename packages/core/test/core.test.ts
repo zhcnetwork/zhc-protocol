@@ -50,7 +50,7 @@ test("no evidence scores ZH0, unrated, provisional", () => {
 });
 
 test("synthetic business operator scores ZH3 and names the limiting axes", () => {
-  const r = score(zh3Company(), manifest);
+  const r = score(zh3Company(), manifest, { chainVerified: true });
   assert.deepEqual(r.profile.axes, { O: 3, D: 2, F: 2, R: 2, N: 1 });
   assert.equal(r.profile.level, 3);
   assert.equal(r.profile.scope, 2);
@@ -124,7 +124,7 @@ test("mandate: counterparty checks before buying from another ZHC", () => {
 });
 
 test("delegated mandates may only narrow their parent", () => {
-  const child: Mandate = { ...mandate, id: "m-2", issuer: "agent:billing", subject: "agent:refunds", parent: "m-1", scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) } }] };
+  const child: Mandate = { ...mandate, id: "m-2", issuer: "agent:billing", subject: "agent:refunds", parent: "m-1", scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) }, require_approval_over: usd(2000) }] };
   assert.equal(isAttenuationOf(child, mandate).ok, true);
   const greedy: Mandate = { ...child, scopes: [{ action: "money.refund", limits: { per_action: usd(50000) } }, { action: "money.spend" }] };
   const r = isAttenuationOf(greedy, mandate);
@@ -152,7 +152,7 @@ test("evidence hash chain detects tampering", () => {
 });
 
 test("attestations sign a profile and fail on tamper or expiry", () => {
-  const { profile } = score(zh3Company(), manifest);
+  const { profile } = score(zh3Company(), manifest, { chainVerified: true });
   const keys = generateIssuerKeys();
   const a = issueAttestation({ issuer: "did:web:ratingdesk.zhc.network", profile, evidenceHead: "abc", now: "2026-09-01T00:00:00Z", ...keys });
   assert.equal(a.payload.profile.assurance, "attested");
@@ -167,4 +167,60 @@ test("self-assessment yields a claimed profile; self-report can't earn integrity
   assert.equal(formatProfile(p), "ZH4·B [O4 D3 F3 R3 N2] S2 claimed");
   assert.equal(claimedProfile({ O: 4, D: 3, F: 3, R: 3, N: 2, I1: 0, I2: 3, I3: 3 }).integrity, "D");
   assert.equal(claimedProfile({ O: 1 }).integrity, "U");
+});
+
+test("unverified evidence is never measured", () => {
+  assert.equal(score(zh3Company(), manifest).profile.assurance, "provisional");
+  assert.equal(score(zh3Company(), manifest, { chainVerified: false }).profile.assurance, "provisional");
+});
+
+test("hard limits beat approval bands: approval can't push through a forbidden change", () => {
+  const m: Mandate = { ...mandate, scopes: [{ action: "pricing.change", tier_max: "tactical", max_relative_change: 0.2 }] };
+  const big = evaluate(m, { action: "pricing.change", tier: "strategic", relative_change: 0.35, at });
+  assert.equal(big.decision, "deny");
+  assert.equal(big.decision === "deny" && big.code, "change");
+  assert.equal(evaluate(m, { action: "pricing.change", tier: "strategic", relative_change: 0.1, at }).decision, "require_approval");
+});
+
+test("counterparty denials carry a screening code", () => {
+  const v = evaluate(mandate, { action: "network.buy", amount: usd(1000), counterparty: { level: 1, integrity: "A", assurance: "attested" }, at });
+  assert.equal(v.decision === "deny" && v.code, "counterparty");
+});
+
+test("attestations require a measured profile and an independent issuer", () => {
+  const keys = generateIssuerKeys();
+  const provisional = score(zh3Company(), manifest).profile;
+  assert.throws(() => issueAttestation({ issuer: "did:web:v.example", profile: provisional, evidenceHead: "x", ...keys }), /only measured/);
+  const measured = score(zh3Company(), manifest, { chainVerified: true }).profile;
+  assert.throws(() => issueAttestation({ issuer: COMPANY, profile: measured, evidenceHead: "x", ...keys }), /own company/);
+});
+
+test("attenuation also checks approval bands, change limits, counterparty rules and revocation", () => {
+  const base: Mandate = { ...mandate, id: "c", parent: "m-1", scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) } }] };
+  assert.ok(isAttenuationOf(base, mandate).problems.includes("money.refund.require_approval_over exceeds parent"));
+  const weak: Mandate = { ...base, scopes: [{ action: "network.buy", limits: { per_action: usd(1000) }, counterparty: { min_level: 1, min_integrity: "C" } }] };
+  const p = isAttenuationOf(weak, mandate).problems;
+  assert.ok(p.includes("network.buy.counterparty.min_level weaker than parent"));
+  assert.ok(p.includes("network.buy.counterparty.min_integrity weaker than parent"));
+  assert.ok(p.includes("network.buy.counterparty.min_assurance weaker than parent"));
+  const capped: Mandate = { ...base, scopes: [{ action: "money.refund", limits: { per_action: usd(1500), per_day: usd(10000) } }] };
+  assert.equal(isAttenuationOf(capped, mandate).ok, true, "a hard cap below the parent's approval band needs no band of its own");
+  const ok: Mandate = { ...base, scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) }, require_approval_over: usd(1000) }] };
+  assert.equal(isAttenuationOf(ok, mandate).ok, true);
+  assert.ok(isAttenuationOf(ok, { ...mandate, revoked: true }).problems.includes("parent is revoked"));
+});
+
+test("progression supports AND conditions, domain targeting, and leaves limits alone", () => {
+  const m: Mandate = {
+    ...mandate,
+    scopes: [{ action: "decision.make", domain: "finance", tier_max: "tactical" }, { action: "decision.make", domain: "ops", tier_max: "tactical" }],
+    progression: [{ when: [{ metric: "integrity", op: ">=", value: "B" }, { metric: "operational_autonomy", op: ">=", value: 0.8 }], then: { action: "decision.make", domain: "ops", set: { tier_max: "operational" } } }],
+  };
+  assert.equal(applyProgression(m, { integrity: "A", operational_autonomy: 0.5 }).fired.length, 0);
+  assert.equal(applyProgression(m, { integrity: "U", operational_autonomy: 0.9 }).fired.length, 0);
+  const { mandate: w, fired } = applyProgression(m, { integrity: "A", operational_autonomy: 0.9 });
+  assert.equal(fired.length, 1);
+  assert.equal(w.scopes[0].tier_max, "tactical");
+  assert.equal(w.scopes[1].tier_max, "operational");
+  assert.equal("limits" in w.scopes[1], false);
 });
