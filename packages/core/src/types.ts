@@ -79,7 +79,8 @@ export interface DecisionMade extends EventBase {
   decided_by: Actor;
   /**
    * pre = approved before acting; post_veto_window = acted, human could veto afterwards;
-   * timeout = escalated, nobody answered within the mandate's timeout, and its on_timeout rule allowed it.
+   * timeout = escalated, and nobody answered within the mandate's timeout, so its on_timeout rule
+   * decided; `outcome` says whether that allowed or denied the action.
    */
   approval: "none" | "pre" | "post_veto_window" | "timeout";
   vetoed?: boolean;

@@ -531,3 +531,11 @@ test("W06: an escalation nobody answered counts as autonomous and is reported", 
   assert.equal(r.metrics.unanswered_escalations, 3);
   assert.equal(r.metrics.tactical_autonomy, 1);
 });
+
+test("W07: a timeout that denied the action is reported but isn't an autonomous decision", () => {
+  const ev: ZHCEvent[] = [];
+  for (let i = 0; i < 10; i++) ev.push({ ...base(i), type: "decision.made", tier: "tactical", origin: "ai", decided_by: "ai", approval: i < 4 ? "timeout" : "none", outcome: i < 2 ? "denied" : undefined });
+  const r = score(ev, undefined, { asOf: "2026-07-05T00:00:00Z" });
+  assert.equal(r.metrics.unanswered_escalations, 4);
+  assert.equal(r.metrics.tactical_autonomy, 0.8, "the two denied by timeout don't count as autonomous");
+});

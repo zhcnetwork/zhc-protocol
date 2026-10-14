@@ -149,7 +149,8 @@ function scoreO(events: ZHCEvent[], manifest: Manifest | undefined): { result: A
 function scoreD(events: ZHCEvent[]): { result: AxisResult; metrics: Record<string, number | null> } {
   const T = THRESHOLDS.D;
   const ds = ofType(events, "decision.made");
-  const autonomous = (d: DecisionMade) => d.decided_by === "ai" && d.approval !== "pre" && !d.vetoed;
+  // A timeout that denied the action did nothing, so it isn't an autonomous decision.
+  const autonomous = (d: DecisionMade) => d.decided_by === "ai" && d.approval !== "pre" && !d.vetoed && !(d.approval === "timeout" && d.outcome === "denied");
   const tier = (t: DecisionMade["tier"]) => ds.filter((d) => d.tier === t);
   const rate = (xs: DecisionMade[]) => share(xs.filter(autonomous).length, xs.length);
   const tac = tier("tactical");
@@ -178,8 +179,9 @@ function scoreD(events: ZHCEvent[]): { result: AxisResult; metrics: Record<strin
       operational_autonomy: rOps,
       strategic_autonomy: rStr,
       strategic_veto_rate: veto,
-      // Escalations nobody answered, which the mandate's timeout rule then allowed. They count as autonomous,
-      // like a decision a person could have vetoed, and are reported so a validator can see an absent approver.
+      // Escalations nobody answered, so the mandate's timeout rule decided. Allowed ones count as autonomous,
+      // like a decision a person could have vetoed; denied ones don't. All are reported, so a validator can
+      // see an absent approver.
       unanswered_escalations: ds.filter((d) => d.approval === "timeout").length,
     },
   };
