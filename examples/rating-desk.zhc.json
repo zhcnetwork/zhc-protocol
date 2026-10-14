@@ -4,69 +4,93 @@
   "name": "ZH Rating Desk",
   "url": "https://ratingdesk.zhc.network",
   "legal": {
-    "entity_name": "ZH Rating Desk (reference implementation; not a legal entity)",
+    "entity_name": "ZH Rating Desk (reference implementation and test harness; no legal entity)",
     "jurisdiction": "US-WY"
   },
   "accountable_human": { "name": "Accountable human of record", "contact": "board@ratingdesk.zhc.network" },
   "charter": {
-    "mission": "Reference implementation of the ZHC Protocol: a simulated validator that rates autonomous companies on the ZH Maturity Model and runs on the protocol itself. Test mode only.",
+    "mission": "Exercise every ZHC Protocol rule under adversarial scenarios: rate simulated autonomous companies on the ZH Maturity Model, and run on the same rules ourselves. Not a real validator: the rated company pays (issuer-pays), which a real validator must not rely on.",
     "reserved_to_human": [
       "changes to this charter",
-      "ownership, capital raises and distributions above charter limits",
+      "signing or widening any mandate",
+      "ownership, capital raises and distributions",
       "dissolution",
       "rating methodology changes"
     ],
     "prohibited": [
       "selling or adjusting a rating for payment",
-      "letting a fee depend on the rating issued",
       "attesting our own company",
       "rating a company whose evidence chain does not verify",
-      "concealing that customers are dealing with an AI"
+      "rating evidence that belongs to a company other than the customer",
+      "concealing that customers are dealing with software"
     ]
   },
   "domains": ["sales", "delivery", "finance", "governance", "operations"],
-  "scope": { "products": 1, "markets": 1, "business_models": 1 },
+  "scope": { "products": 2, "markets": 1, "business_models": 1 },
   "agents": [
     {
       "id": "intake",
-      "role": "Intake and customer contact",
-      "domain": "sales",
-      "agent_card": "https://ratingdesk.zhc.network/agents/intake/agent-card.json"
+      "role": "Rule-based intake role: quotes, accepts or declines engagements, discloses that it is software",
+      "domain": "sales"
     },
     {
       "id": "assessor",
-      "role": "Scores evidence and writes reports",
-      "domain": "delivery",
-      "agent_card": "https://ratingdesk.zhc.network/agents/assessor/agent-card.json"
+      "role": "Rule-based assessment role: verifies evidence chains, scores with the reference scorer, writes reports, signs attestations",
+      "domain": "delivery"
     },
-    { "id": "billing", "role": "Charges, refunds and vendor payments", "domain": "finance" },
-    { "id": "integrity", "role": "Checks every report before delivery", "domain": "governance" },
-    { "id": "operator", "role": "Runs the company: pricing, priorities, proposals", "domain": "operations" }
+    {
+      "id": "billing",
+      "role": "Rule-based billing role: charges, refunds by policy, vendor payments, same-kind payment-rail failover",
+      "domain": "finance"
+    },
+    {
+      "id": "integrity",
+      "role": "Rule-based integrity role: recomputes every rating and blocks inflated or paid-for ones before delivery",
+      "domain": "governance"
+    },
+    {
+      "id": "operator",
+      "role": "Rule-based operations role: self-score, pricing rules, mandate and strategy proposals to the human, partners",
+      "domain": "operations"
+    },
+    {
+      "id": "monitor",
+      "role": "Rule-based monitoring role: re-scores subscribers' published evidence weekly",
+      "domain": "delivery"
+    }
   ],
   "services": [
     {
       "id": "claimed-assessment",
-      "description": "Questionnaire-based ZH profile with a written report",
+      "description": "Questionnaire-based ZH profile with a written report (assurance: claimed)",
       "endpoint": "https://ratingdesk.zhc.network/v0.2/assessments",
       "protocol": "http",
-      "price": { "amount": 4900, "currency": "USD" },
+      "price": { "amount": 7100, "currency": "USD" },
       "rails": ["stripe", "x402"]
     },
     {
       "id": "measured-assessment",
-      "description": "Profile computed from your hash-chained evidence log",
+      "description": "Profile computed from your hash-chained evidence log (assurance: measured)",
       "endpoint": "https://ratingdesk.zhc.network/v0.2/assessments",
       "protocol": "http",
-      "price": { "amount": 49900, "currency": "USD" },
-      "rails": ["stripe", "x402", "mpp"]
+      "price": { "amount": 72300, "currency": "USD" },
+      "rails": ["stripe", "x402"]
     },
     {
-      "id": "attestation",
-      "description": "Signed 90-day ZH attestation over a measured profile",
+      "id": "attested-assessment",
+      "description": "Measured profile plus a signed 90-day ZH attestation (assurance: attested). Issuer-pays: see the charter.",
       "endpoint": "https://ratingdesk.zhc.network/v0.2/assessments",
       "protocol": "a2a",
-      "price": { "amount": 149900, "currency": "USD" },
-      "rails": ["stripe", "mpp"]
+      "price": { "amount": 200000, "currency": "USD" },
+      "rails": ["stripe", "x402"]
+    },
+    {
+      "id": "monitoring-subscription",
+      "description": "Continuous monitoring: weekly re-score of your published evidence, alerts on level changes",
+      "endpoint": "https://ratingdesk.zhc.network/v0.2/assessments",
+      "protocol": "http",
+      "price": { "amount": 19900, "currency": "USD" },
+      "rails": ["stripe", "x402"]
     }
   ],
   "mandates_uri": "https://ratingdesk.zhc.network/v0.2/mandates",

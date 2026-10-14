@@ -19,8 +19,8 @@ export const QUESTIONS: Question[] = [
       { value: 0, label: "People do it. AI isn't part of execution." },
       { value: 1, label: "AI does single tasks when asked, and someone reviews every output." },
       { value: 2, label: "AI runs multi-step workflows in at least one area; people spot-check batches." },
-      { value: 3, label: "AI runs at least one business area end to end, exceptions included. People only look at aggregate metrics." },
-      { value: 4, label: "AI runs every area and hands work between them without a person routing it." },
+      { value: 3, label: "In at least one area, AI does 90% or more of the work without a person touching it, and handles at least half of its exceptions." },
+      { value: 4, label: "Every area meets that bar, and AI routes the work between areas without a person." },
       { value: 5, label: "AI also improves its own processes: it tests a change against real work, keeps it only if outcomes improve, and can show the evidence." },
     ],
   },
@@ -34,7 +34,7 @@ export const QUESTIONS: Question[] = [
       { value: 2, label: "AI makes most routine tactical calls on its own (what to post, how to answer, which bug next)." },
       { value: 3, label: "AI also makes most operational calls and proposes strategy; people approve strategy." },
       { value: 4, label: "AI sets and executes strategy; people rarely veto (<10% of the time)." },
-      { value: 5, label: "AI decides everything inside a written charter; people only change the charter or pull the emergency brake." },
+      { value: 5, label: "AI makes 95% or more of the decisions at every tier below the charter; people change the charter or pull the emergency brake." },
     ],
   },
   {
@@ -44,10 +44,10 @@ export const QUESTIONS: Question[] = [
     options: [
       { value: 0, label: "AI can't spend or earn." },
       { value: 1, label: "AI spends within pre-set budgets (API costs, ad caps)." },
-      { value: 2, label: "AI also sets prices and runs the P&L for a product line." },
+      { value: 2, label: "AI also changes prices within set limits, and revenue comes in under its authority." },
       { value: 3, label: "AI runs nearly all operating money flows: invoicing, collections, vendor payments, refunds." },
       { value: 4, label: "AI also allocates reserves and investments." },
-      { value: 5, label: "AI also decides distributions to owners, within the charter." },
+      { value: 5, label: "AI makes every capital allocation under its mandate (reserves, investments, any payout to owners) and runs 98% or more of operating money." },
     ],
   },
   {
@@ -60,7 +60,7 @@ export const QUESTIONS: Question[] = [
       { value: 2, label: "Several days; it reroutes around most failures itself." },
       { value: 3, label: "Weeks; it catches most problems before customers notice." },
       { value: 4, label: "Months; each incident leaves a fix that sticks." },
-      { value: 5, label: "A year or more, including surviving a provider migration." },
+      { value: 5, label: "A year or more, catching most problems before customers notice and fixing them for good." },
     ],
   },
   {
@@ -73,7 +73,7 @@ export const QUESTIONS: Question[] = [
       { value: 2, label: "It also sells a published service to them." },
       { value: 3, label: "It runs multi-step projects jointly with another autonomous company." },
       { value: 4, label: "It also rates, validates, or shares learnings with the network regularly." },
-      { value: 5, label: "It has spawned another autonomous company that now runs at ZH2 or above." },
+      { value: 5, label: "It has founded another autonomous company that now runs at ZH2 or above." },
     ],
   },
   {
