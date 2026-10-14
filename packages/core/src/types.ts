@@ -303,9 +303,42 @@ export interface Manifest {
    * that delegate authority. `holder` is the issuer id used in mandates (e.g. "human:owner").
    */
   signing_keys?: { id: string; holder: string; alg: "Ed25519"; public_key_pem: string }[];
+  /** Public keys that sign this company's published evidence heads (PROTOCOL §4.2), and nothing else. */
+  evidence_keys?: { id: string; alg: "Ed25519"; public_key_pem: string }[];
   evidence?: { uri: string; format: "zhc-events/0.2" };
   parent?: string;
   profile?: { claimed?: string; attestations?: string[] };
+}
+
+/**
+ * Anything sealed in a hash chain: ZHC events, or a service's own records. Chaining needs only
+ * `prev` and `hash`; every other member is covered by the hash.
+ */
+export interface Sealable {
+  prev?: string;
+  hash?: string;
+}
+
+/**
+ * A company's statement of its evidence head (PROTOCOL §4.2). Signed with a key from the manifest's
+ * `evidence_keys` and published, it lets anyone who keeps it detect a later rewrite of the log.
+ */
+export interface EvidenceHead {
+  type: "ZHEvidenceHead";
+  spec: "0.2";
+  company: string;
+  /** Hash of the last event in the log at `at`. */
+  head: string;
+  /** Number of events in the log up to and including `head`. */
+  events: number;
+  at: string;
+  kid?: string;
+}
+
+export interface SignedEvidenceHead {
+  payload: EvidenceHead;
+  /** base64url Ed25519 signature over canonicalJSON(payload). */
+  signature: string;
 }
 
 /** Returns a trusted public key (SPKI PEM) for an issuer and key id, or undefined if unknown. */
@@ -318,6 +351,12 @@ export type KeyResolver = (issuer: string, kid?: string) => string | undefined;
 export function mandateKeyResolver(manifest: Pick<Manifest, "signing_keys">): KeyResolver {
   return (issuer, kid) =>
     (manifest.signing_keys ?? []).find((k) => k.alg === "Ed25519" && k.holder === issuer && (kid === undefined || k.id === kid))?.public_key_pem;
+}
+
+/** Resolves the keys that sign this company's *evidence heads*: `evidence_keys`, for its own id only. */
+export function evidenceKeyResolver(manifest: Pick<Manifest, "id" | "evidence_keys">): KeyResolver {
+  return (issuer, kid) =>
+    issuer === manifest.id ? (manifest.evidence_keys ?? []).find((k) => k.alg === "Ed25519" && (kid === undefined || k.id === kid))?.public_key_pem : undefined;
 }
 
 /**

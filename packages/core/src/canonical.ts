@@ -23,5 +23,6 @@ export function canonicalJSON(value: unknown): string {
 
 /** UTF-8 bytes of the canonical form, ready to hash or sign. */
 export function canonicalBytes(value: unknown): Uint8Array<ArrayBuffer> {
-  return new TextEncoder().encode(canonicalJSON(value));
+  // Copied into a fresh ArrayBuffer: some runtimes (Workers) type TextEncoder's result over ArrayBufferLike.
+  return new Uint8Array(new TextEncoder().encode(canonicalJSON(value)));
 }

@@ -16,5 +16,12 @@
       "protocol": "http",
       "price": { "amount": 4900, "currency": "USD" }
     }
+  ],
+  "evidence_keys": [
+    {
+      "id": "evidence-2026-08",
+      "alg": "Ed25519",
+      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEACg8EWNfJBia+y2mU6cN7SvpvvDQBfdhMNj1b6GqXsaE=\n-----END PUBLIC KEY-----\n"
+    }
   ]
 }

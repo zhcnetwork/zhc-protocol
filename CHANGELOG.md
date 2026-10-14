@@ -15,6 +15,7 @@ This revision fixes problems found in independent reviews of v0.2. Each confirme
 - **Delegated authority is checked link by link, with shared limits.** `evaluateChain()` evaluates the request against every mandate up to the root, denies an incomplete chain, and denies with `revoked` when any ancestor is revoked. `ExposureBook` reserves amounts against every mandate in the chain, so a parent's cap bounds everything spent beneath it. Usage is kept per scope and carried across versions (`supersedes`), so one scope's flows don't use up another's cap and re-issuing a mandate doesn't reset it. Approvals are re-checked against current mandates and usage when the action executes (PROTOCOL §3.1).
 - **Delegation checks provenance.** `isAttenuationOf()` now requires `child.parent` to be the parent's id, the child's issuer to be the parent's subject, and the child's validity to sit inside the parent's. It compares each child scope with the parent's most specific scope for the same requests, keeps escalation with the parent's approver and no more permissive on timeout, and keeps rail bindings no larger. `supersedes` records a replacement, separate from delegation.
 - **A company can't raise its own limits.** Progression conditions name their source: `self`, `attestation` or `processor`. A rule with any self-sourced condition, including one on the company's own ZH score, may only narrow authority. A widening it would have made is returned as `refused`, a proposal for the issuer to sign. No rule may change a scope's action or area, a rule with no area targets only the area-less scope, and attestation facts count only until the attestation expires. A rule's optional `effect` (`widen` or `narrow`) keeps it from moving a scope the other way. `attestedFacts()` turns a verified, independent attestation into facts a rule may use.
+- **Approval timeouts.** `on_timeout: allow` lets an action proceed only if every mandate in the chain allows it and the longest timeout has passed (`reserve(…, { approvedBy: "timeout", escalatedAt })`); never past a hard limit.
 - **Mandate signatures.** `signMandate()` and `verifyMandate()` (Ed25519 over canonical JSON). Keys are published in the manifest's new `signing_keys`. Mandate keys and validator keys have one purpose each: `mandateKeyResolver()` reads only `signing_keys`, `validatorKeyResolver()` only `validator_keys`.
 
 ### Attestations
@@ -41,6 +42,8 @@ This revision fixes problems found in independent reviews of v0.2. Each confirme
 - New event `incident.opened`. `incident.resolved` may link to it with `incident`. `process.changed` records `evaluated` and `outcome`.
 - Canonical JSON (ZHC-CJSON) is specified, with cross-language test vectors. It matches RFC 8785 on I-JSON input.
 - Hashing and signing also run on Web Crypto (browsers and Workers), byte-identical with `node:crypto`.
+- **Signed evidence heads.** A published head is a signed `ZHEvidenceHead` statement (`schemas/head.schema.json`), signed with a key from the manifest's new `evidence_keys` (`signHead()`, `verifyHead()`, `evidenceKeyResolver()`). `extendsHead()` checks that a log still contains a head published earlier, and `verifyChain()` / `verifyChainWeb()` verify a segment from a head you hold.
+- The chain functions accept any sealed record, not only ZHC events, so a service can chain its own records.
 
 ### Specification text
 

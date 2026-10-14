@@ -41,7 +41,7 @@
       "from": "2026-06-01T00:00:00.000Z",
       "to": "2026-08-30T00:00:00.000Z"
     },
-    "manifest_sha256": "eeca07f710f8d659e9e7c3703e7d6ae8ae2056e3508a94078da4bd84425bb6c5",
+    "manifest_sha256": "f361c59663eb76d9c2c2a8e49cb38a5a08d0cd2fcc2800bcc32fe2acaaeadcc1",
     "independence": {
       "common_control": false,
       "fee_depends_on_outcome": false,
@@ -50,6 +50,6 @@
     "issued_at": "2026-09-01T00:00:00.000Z",
     "expires_at": "2026-11-30T00:00:00.000Z"
   },
-  "signature": "TXgEdyhQsC27NxXnOXVWrL18QzCJlt-3sM1EHS4Z-hS6WJdRklH20RIl56JsGq-Ft-t_GIj8E0GSP4s_T8QHBg",
+  "signature": "95jLu5wnI9bLg33xp1CX-Lpy0cd9OzpbsNyH--5WuFUYL1izadjaqvVaLf6yoWEF0HB8Vq_7TOMWBPnz-08vBA",
   "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEADYxaagn4wIlmWVpNPuF99PTabEKuTvu6l0p79VREoNg=\n-----END PUBLIC KEY-----\n"
 }

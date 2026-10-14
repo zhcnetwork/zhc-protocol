@@ -282,6 +282,29 @@
           }
         }
       }
+    },
+    "evidence_keys": {
+      "type": "array",
+      "description": "Public keys that sign this company's published evidence heads (PROTOCOL §4.2), and nothing else.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "alg",
+          "public_key_pem"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "alg": {
+            "const": "Ed25519"
+          },
+          "public_key_pem": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "$defs": {

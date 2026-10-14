@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhc.network/schemas/0.2/head.schema.json",
+  "$comment": "Wire version 0.2, specification revision 0.2.1. Revisions add optional fields only.",
+  "title": "ZHC Evidence Head v0.2",
+  "description": "A company's signed statement of its evidence head (PROTOCOL §4.2). Ed25519 over the canonical JSON of payload, with a key from the company's evidence_keys.",
+  "type": "object",
+  "required": [
+    "payload",
+    "signature"
+  ],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "required": [
+        "type",
+        "spec",
+        "company",
+        "head",
+        "events",
+        "at"
+      ],
+      "properties": {
+        "type": {
+          "const": "ZHEvidenceHead"
+        },
+        "spec": {
+          "const": "0.2"
+        },
+        "company": {
+          "type": "string",
+          "description": "The manifest id of the company whose books these are."
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Hash of the last event in the log at `at`."
+        },
+        "events": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of events up to and including head."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "kid": {
+          "type": "string",
+          "description": "Key id from the company's evidence_keys."
+        }
+      }
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "base64url Ed25519 signature over the canonical JSON of payload."
+    }
+  }
+}

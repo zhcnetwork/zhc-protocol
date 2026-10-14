@@ -76,6 +76,7 @@ A ZHC MUST publish a manifest at `https://{domain}/.well-known/zhc.json` conform
 | `agents[]` | MUST | Each agent: `id`, `role`, `domain`; SHOULD link its A2A `agent_card`; MAY link an `erc8004` identity. |
 | `signing_keys[]` | SHOULD | Ed25519 public keys (`id`, `holder`, `alg`, `public_key_pem`) that sign the company's mandates (§3.5). `holder` is the issuer id used in mandates, such as `human:owner` or an agent id that delegates. |
 | `validator_keys[]` | MUST if it issues attestations | Ed25519 public keys (`id`, `alg`, `public_key_pem`) that verifiers resolve attestation signatures against (§6.2). |
+| `evidence_keys[]` | SHOULD | Ed25519 public keys (`id`, `alg`, `public_key_pem`) that sign the company's published evidence heads (§4.2). |
 | `services[]` | SHOULD | Services offered to others: endpoint, protocol (`a2a` / `mcp` / `http`), price, accepted rails. Used by integrity applicability (MODEL §5) and N2. |
 | `mandates_uri` | SHOULD | Where mandates (or their public summaries) are published. |
 | `evidence` | SHOULD | Where the evidence head (and, if public, the log) is published. |
@@ -84,7 +85,7 @@ A ZHC MUST publish a manifest at `https://{domain}/.well-known/zhc.json` conform
 
 The manifest SHOULD be signed (JWS, detached) with a key listed in the company's DID document. A manifest can only be as trustworthy as its domain: keys published in it are trusted because the verifier trusts that the domain belongs to the company.
 
-**Keys have one purpose each.** A verifier resolves mandate signatures only from `signing_keys` (by holder and key id) and attestation signatures only from `validator_keys`. A key listed for one purpose MUST NOT verify the other: an attestation key must never authorize spending, and a mandate key must never vouch for another company (`mandateKeyResolver()`, `validatorKeyResolver()`).
+**Keys have one purpose each.** A verifier resolves mandate signatures only from `signing_keys` (by holder and key id), attestation signatures only from `validator_keys`, and evidence-head signatures only from `evidence_keys`. A key listed for one purpose MUST NOT verify another: an attestation key must never authorize spending, a mandate key must never vouch for another company, and neither may speak for the books (`mandateKeyResolver()`, `validatorKeyResolver()`, `evidenceKeyResolver()`).
 
 **A2A binding.** Each Agent Card listed in a manifest SHOULD include the extension `{"zhc": {"company": "<manifest id>", "mandate": "<mandate id>"}}` so a peer that meets an agent can find the company and its rules.
 
@@ -136,6 +137,8 @@ Denials are recorded as `conduct.mandate_blocked`, except `counterparty` denials
 **Delegated authority is evaluated link by link.** When the subject's mandate was delegated, the request MUST be evaluated against every mandate in the chain up to the root (`evaluateChain()`). The chain MUST be complete: it ends at a mandate with no `parent`, so leaving out an ancestor denies (`invalid`). A revoked mandate anywhere in the chain denies (`revoked`). Any other denial denies. Any approval band requires approval. Every link MUST pass §3.2.
 
 **Limits are shared down the chain, across versions, and per scope.** An amount spent under a delegated mandate counts against that mandate and every ancestor, so a parent's daily cap bounds the total spent under it and all its descendants. A new version of a mandate (`supersedes`) inherits the usage of the versions before it, so re-issuing a mandate can't reset a limit. An amount counts only against the scope each mandate selected for it, so one scope's flows don't use up another's cap. The reference `ExposureBook` reserves an amount before acting, commits it once the effect is confirmed, and releases it if the action didn't happen.
+
+**Approval timeouts.** If the approver doesn't answer within `escalation.timeout_s`, `on_timeout` decides. With `deny` the action is denied. With `allow` it may proceed as if approved, but only if every mandate in the chain allows on timeout, only once the longest timeout in the chain has passed since the escalation, and never past a hard limit (`ExposureBook.reserve(…, { approvedBy: "timeout", escalatedAt })`). Record it as a decision the mandate made, not the human.
 
 **Re-check at the moment of effect.** Authority is checked when the action takes effect, not only when it is queued. An implementation MUST evaluate the action again, against current mandates and current usage, immediately before it executes. A human approval authorizes one exact action. It satisfies an approval band, but never a hard limit, a revocation or an expiry: if the mandate was revoked or the limit used up while the approval was pending, the action is denied.
 
@@ -241,7 +244,11 @@ On I-JSON input this produces the same bytes as RFC 8785 (JCS). Test vectors: [`
 
 **What a valid chain proves, and what it doesn't.** A chain that verifies shows that the events are internally consistent and haven't been edited since a head you already hold. It does not show that the events happened, that none were left out, or that the timestamps are honest. A company can rewrite and re-seal its entire log; only a head published earlier, or held by someone else, exposes that. So:
 - a company SHOULD publish its head at least daily (in its manifest's `evidence.uri`), and MAY anchor it on a public chain;
-- validators SHOULD keep every head they have seen, and treat a log that doesn't extend a head they hold as rewritten.
+- validators SHOULD keep every head they have seen, and treat a log that doesn't extend a head they hold as rewritten (`extendsHead()`). A segment of a log can be verified from a head you hold (`verifyChain(segment, head)`).
+
+**Publishing a head.** A published head is a signed statement ([`schemas/head.schema.json`](../../schemas/head.schema.json)): `{ "type": "ZHEvidenceHead", "spec": "0.2", "company", "head", "events", "at", "kid" }`, where `head` is the hash of the last event and `events` the number of events up to and including it. It is signed like an attestation (Ed25519 over the canonical JSON of the payload) with a key from the company's `evidence_keys` (`signHead()`, `verifyHead()`). Anyone who keeps a signed head can later prove what the books said at that time.
+
+The chain rules apply to any sealed record, not only ZHC events: a service MAY keep its own records (for example, uptime checks) in a chain of the same form.
 
 ### 4.3 Who records what
 
@@ -364,12 +371,12 @@ Profile strings written under v0.2, with N inside the brackets (`ZH3·A [O3 D2 F
 | Section | Change |
 |---|---|
 | §0 | Each corporate analogy now says what the object is not. Bank, dispute forum and capital are listed as missing. |
-| §2 | `signing_keys`; mandate keys and validator keys have one purpose each. The charter SHOULD name a successor. Scope is declared, not checked. |
-| §3.1 | Evaluation fails closed, including malformed counterparty checks; most specific scope; delegated chains evaluated link by link to their root, with shared limits; a revoked ancestor denies; re-check at the moment of effect; evaluation outside the agent. New deny code `invalid`. |
+| §2 | `signing_keys` and `evidence_keys`; mandate, validator and evidence keys have one purpose each. The charter SHOULD name a successor. Scope is declared, not checked. |
+| §3.1 | Approval timeouts defined. Evaluation fails closed, including malformed counterparty checks; most specific scope; delegated chains evaluated link by link to their root, with shared limits; a revoked ancestor denies; re-check at the moment of effect; evaluation outside the agent. New deny code `invalid`. |
 | §3.2 | Delegation checks provenance (parent id, issuer, validity), escalation and rail bindings as well as narrowing, against the parent's most specific scope. `supersedes` is separate from delegation. |
 | §3.3 | Progression conditions name their source. Self-sourced facts, including a company's own score, can only narrow authority. Rules can't change a scope's action or area; attestation facts must be current. |
 | §3.5 | Mandate signatures. |
-| §4 | `incident.opened`; `process.changed` records evaluation and outcome. ZHC-CJSON defined with test vectors. The text says what a valid chain does and doesn't prove. |
+| §4 | `incident.opened`; `process.changed` records evaluation and outcome. ZHC-CJSON defined with test vectors. The text says what a valid chain does and doesn't prove. Signed evidence heads; segment verification; chains of any sealed record. |
 | §5 | `asOf` required; events must belong to the scored company; profiles carry their method; the caller verifies the chain. |
 | §6 | Independence rules, checked on verification; trusted key resolution and exact time checks; what an attestation establishes. |
 | §7 | A ZH level isn't a payment decision; safe fetching; no claim of a live registry. |

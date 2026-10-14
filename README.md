@@ -45,9 +45,9 @@ ZH3 (Business Operator), integrity A. The level is the highest one whose gates a
 
 ```
 spec/v0.2/        MODEL.md (maturity model) · PROTOCOL.md (objects, rules, conformance)
-schemas/          JSON Schemas: manifest, mandate, event, attestation
+schemas/          JSON Schemas: manifest, mandate, event, evidence head, attestation
 examples/         manifests (a reference validator desk, an example validator, a test company),
-                  a signed mandate, sample evidence, a score report and an attestation
+                  a signed mandate, sample evidence, a signed evidence head, a score report and an attestation
 packages/core/    Reference implementation (TypeScript, zero runtime dependencies)
 ```
 

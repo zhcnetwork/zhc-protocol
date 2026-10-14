@@ -512,3 +512,14 @@ test("D04: an old log isn't measured as of today", () => {
   const later = score(ev, manifest, { asOf: "2026-09-30T00:00:00Z", chainVerified: true });
   assert.equal(later.profile.assurance, "provisional", "the evidence ends a month before asOf");
 });
+
+test("W04: an approval band is satisfied by a timeout only if every mandate allows it and the time has passed", () => {
+  const allow: Mandate = { ...mandate, escalation: { to: "human:h", timeout_s: 3600, on_timeout: "allow" }, scopes: [{ action: "money.refund", limits: { per_action: usd(10_000) }, require_approval_over: usd(1000) }] };
+  const req = { action: "money.refund" as const, amount: usd(5000), at: "2026-06-01T02:00:00Z" };
+  const book = new ExposureBook();
+  assert.equal(book.reserve([allow], req, { id: "early", approvedBy: "timeout", escalatedAt: "2026-06-01T01:30:00Z" }).held, false, "only 30 minutes have passed");
+  assert.equal(book.reserve([allow], req, { id: "late", approvedBy: "timeout", escalatedAt: "2026-06-01T00:30:00Z" }).held, true);
+  const deny: Mandate = { ...allow, escalation: { ...allow.escalation, on_timeout: "deny" } };
+  assert.equal(book.reserve([deny], req, { id: "d", approvedBy: "timeout", escalatedAt: "2026-06-01T00:00:00Z" }).held, false);
+  assert.equal(book.reserve([deny], { ...req, amount: usd(20_000) }, { id: "h", approvedBy: "human" }).held, false, "no approval passes a hard limit");
+});

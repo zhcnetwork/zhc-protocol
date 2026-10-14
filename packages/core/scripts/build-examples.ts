@@ -9,22 +9,25 @@ import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import {
   canonicalJSON,
+  evidenceKeyResolver,
   formatProfile,
   issueAttestation,
   mandateKeyResolver,
   profileId,
   score,
   seal,
+  signHead,
   signMandate,
   validatorKeyResolver,
   verifyAttestation,
   verifyChain,
+  verifyHead,
   verifyMandate,
   type Manifest,
   type Mandate,
   type ZHCEvent,
 } from "../src/index.ts";
-import { FIXTURE_AS_OF, manifest as testCompany, zh3Company } from "../test/fixtures.ts";
+import { FIXTURE_AS_OF, manifest as fixtureManifest, zh3Company } from "../test/fixtures.ts";
 
 const OUT = new URL("../../../examples/", import.meta.url);
 const check = process.argv.includes("--check");
@@ -78,6 +81,13 @@ function assertOk(label: string, r: { ok: boolean; reason?: string }) {
   if (!r.ok) throw new Error(`${label}: ${r.reason}`);
 }
 
+// The test company publishes one key for signing its evidence heads.
+const evidenceKey = exampleKey("test.zhc.network evidence 2026-08");
+const testCompany: Manifest = {
+  ...fixtureManifest,
+  evidence_keys: [{ id: "evidence-2026-08", alg: "Ed25519", public_key_pem: evidenceKey.publicKeyPem }],
+};
+
 // 1. Evidence: the test company's ~60 days, in time order, hash-chained.
 const raw = zh3Company()
   .map((e, i) => ({ e, i }))
@@ -89,6 +99,10 @@ const verified = verifyChain(chain);
 assertOk("evidence chain", verified);
 emit("events.sample.jsonl", chain.map((e) => JSON.stringify(e)).join("\n") + "\n");
 emitJSON("test-company.zhc.json", testCompany);
+// Its signed statement of the head, as it would publish it the day the log ends.
+const head = signHead({ company: testCompany.id, head: verified.head!, events: chain.length, at: FIXTURE_AS_OF }, evidenceKey.privateKey, "evidence-2026-08");
+assertOk("evidence head", verifyHead(head, evidenceKeyResolver(testCompany)));
+emit("head.sample.json", `${JSON.stringify(head, null, 2)}\n`);
 
 // 2. Score report, as of just after the last event.
 const report = score(chain, testCompany, { asOf: FIXTURE_AS_OF, chainVerified: true });

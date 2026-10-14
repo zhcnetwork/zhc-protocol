@@ -441,15 +441,28 @@ export class ExposureBook {
   }
 
   /**
-   * Evaluate and, if permitted, hold the amount against every mandate in the chain. Pass
-   * `approved: true` only when a human approved this exact action; it satisfies an approval band but
-   * never a hard limit, and the action is re-evaluated against current mandates and usage now.
+   * Evaluate and, if permitted, hold the amount against every mandate in the chain. The action is
+   * re-evaluated against current mandates and usage now. An approval band is satisfied only by:
+   * - `approvedBy: "human"` (or `approved: true`): the approver approved this exact action;
+   * - `approvedBy: "timeout"`: the approver didn't answer, `escalatedAt` is at least the longest
+   *   `timeout_s` in the chain before `req.at`, and every mandate in the chain allows on timeout.
+   * Neither ever satisfies a hard limit.
    */
-  reserve(chain: Mandate[], req: ActionRequest, opts: { id: string; approved?: boolean }): { verdict: Verdict; held: boolean } {
+  reserve(
+    chain: Mandate[],
+    req: ActionRequest,
+    opts: { id: string; approved?: boolean; approvedBy?: "human" | "timeout"; escalatedAt?: string },
+  ): { verdict: Verdict; held: boolean } {
     if (this.#res.has(opts.id)) throw new Error(`reservation ${opts.id} already exists`);
     for (const m of chain) this.learn(m);
     const verdict = evaluateChain(chain, req, (id, scope) => (validTime(req.at) ? this.usage(id, req.at, scopeKey(scope)) : EMPTY_USAGE));
-    const permitted = verdict.decision === "allow" || (verdict.decision === "require_approval" && opts.approved === true);
+    const by = opts.approvedBy ?? (opts.approved === true ? "human" : undefined);
+    const waitedMs = validTime(opts.escalatedAt) && validTime(req.at) ? Date.parse(req.at) - Date.parse(opts.escalatedAt) : -1;
+    const timedOut =
+      by === "timeout" &&
+      chain.every((m) => m.escalation?.on_timeout === "allow") &&
+      waitedMs >= Math.max(...chain.map((m) => m.escalation?.timeout_s ?? Infinity)) * 1000;
+    const permitted = verdict.decision === "allow" || (verdict.decision === "require_approval" && (by === "human" || timedOut));
     if (!permitted) return { verdict, held: false };
     if (req.amount) {
       const scopes = chain.map((m) => {

@@ -7,23 +7,25 @@
 // events happened, that none were left out, or that timestamps are honest.
 import { createHash } from "node:crypto";
 import { canonicalJSON } from "./canonical.ts";
-import type { ZHCEvent } from "./types.ts";
+import type { Sealable, ZHCEvent } from "./types.ts";
 
 export { canonicalJSON } from "./canonical.ts";
 
-export function hashEvent(e: ZHCEvent): string {
+/** sha256 of the canonical record without its own `hash`. Works on any sealed record, not only events. */
+export function hashEvent(e: Sealable): string {
   const { hash: _ignored, ...rest } = e;
   return createHash("sha256").update(canonicalJSON(rest)).digest("hex");
 }
 
-/** Append an event to a chain: sets `prev` and `hash`. Returns the sealed event. */
-export function seal<E extends ZHCEvent>(event: E, prevHash: string | undefined): E {
+/** Append a record to a chain: sets `prev` and `hash`. Returns the sealed record. */
+export function seal<E extends Sealable>(event: E, prevHash: string | undefined): E {
   const withPrev = { ...event, prev: prevHash } as E;
   return { ...withPrev, hash: hashEvent(withPrev) };
 }
 
-export function verifyChain(events: ZHCEvent[]): { ok: boolean; head?: string; brokenAt?: number; reason?: string } {
-  let prev: string | undefined;
+/** Verify a chain from its first record, or a segment that continues from `from`, a head you already hold. */
+export function verifyChain(events: Sealable[], from?: string): { ok: boolean; head?: string; brokenAt?: number; reason?: string } {
+  let prev: string | undefined = from;
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
     if (e.prev !== prev) return { ok: false, brokenAt: i, reason: "prev hash mismatch" };

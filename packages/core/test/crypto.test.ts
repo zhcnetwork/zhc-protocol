@@ -74,3 +74,36 @@ test("Web Crypto verifies a node-signed attestation and signs interoperably", as
   const sig = await signCanonicalWeb({ hello: "world" }, priv);
   assert.equal(await verifyCanonicalWeb({ hello: "world" }, sig, pub), true);
 });
+
+// --- Found while building the first real service on the protocol (W-findings) --------------------
+
+test("W02: chain helpers seal any record and verify a segment from a head you hold", async () => {
+  const { sealWeb: sw, verifyChainWeb: vw, extendsHead } = await import("../src/index.ts");
+  type Check = { prev?: string; hash?: string; monitor: string; ok: boolean; at: string };
+  const checks: Check[] = [];
+  for (let i = 0; i < 6; i++) checks.push(await sw<Check>({ monitor: "m1", ok: i !== 3, at: `2026-10-01T00:0${i}:00Z` }, checks.at(-1)?.hash));
+  assert.equal((await vw(checks)).ok, true);
+  const held = checks[2].hash!;
+  assert.deepEqual(await vw(checks.slice(3), held), { ok: true, head: checks[5].hash });
+  assert.equal((await vw(checks.slice(3), checks[1].hash)).reason, "prev hash mismatch");
+  assert.equal(verifyChain(checks).ok, true, "node and Web Crypto agree on non-event records");
+  assert.equal(extendsHead(checks, { head: held, events: 3 }), true);
+  assert.equal(extendsHead(checks, { head: held, events: 4 }), false);
+});
+
+test("W03: evidence heads are signed with evidence keys only", async () => {
+  const { signHead, verifyHead, evidenceKeyResolver, mandateKeyResolver } = await import("../src/index.ts");
+  const ev = generateIssuerKeys();
+  const owner = generateIssuerKeys();
+  const company = {
+    id: "did:web:co.example",
+    evidence_keys: [{ id: "e1", alg: "Ed25519" as const, public_key_pem: ev.publicKeyPem }],
+    signing_keys: [{ id: "k1", holder: "human:h", alg: "Ed25519" as const, public_key_pem: owner.publicKeyPem }],
+  };
+  const head = signHead({ company: company.id, head: "a".repeat(64), events: 704, at: "2026-10-01T00:00:00Z" }, ev.privateKey, "e1");
+  assert.deepEqual(verifyHead(head, evidenceKeyResolver(company)), { ok: true });
+  assert.equal(verifyHead({ ...head, payload: { ...head.payload, events: 703 } }, evidenceKeyResolver(company)).reason, "bad signature");
+  const byMandateKey = signHead({ company: company.id, head: "a".repeat(64), events: 704, at: "2026-10-01T00:00:00Z" }, owner.privateKey, "k1");
+  assert.equal(verifyHead(byMandateKey, evidenceKeyResolver(company)).ok, false, "a mandate key can't sign the books' head");
+  assert.equal(mandateKeyResolver(company)("did:web:co.example", "e1"), undefined, "an evidence key can't sign a mandate");
+});

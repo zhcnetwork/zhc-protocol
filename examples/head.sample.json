@@ -1,0 +1,12 @@
+{
+  "payload": {
+    "type": "ZHEvidenceHead",
+    "spec": "0.2",
+    "company": "did:web:test.zhc.network",
+    "head": "6d6bc9f44074deb552d31c76467d8d356036b12789f58bb24890ca4deaa96666",
+    "events": 704,
+    "at": "2026-08-30T00:00:00Z",
+    "kid": "evidence-2026-08"
+  },
+  "signature": "esbvWaHnKXPsubEMBEvlCK_M_VmnNnlL-_lTiNx7KdODzcNR1H6NDxf3TW8R-ZQocaUirtsWf9SEzNFVgV-2BQ"
+}
