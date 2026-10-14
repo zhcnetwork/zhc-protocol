@@ -463,3 +463,52 @@ test("V14: N2 needs the sale of a service the manifest lists", () => {
 test("V20: the evidence gap is unknown, not zero, when there is no evidence", () => {
   assert.equal(score([], manifest, { asOf: FIXTURE_AS_OF }).metrics.evidence_gap_hours, null);
 });
+
+// --- Found while upgrading the reference desk to 0.2.1 (D-findings) --------------------------
+
+test("D01: usage counts only against the scope it was spent under", () => {
+  const m: Mandate = {
+    ...mandate,
+    scopes: [
+      { action: "money.collect", limits: { per_month: usd(1_000_000) } },
+      { action: "money.spend", limits: { per_month: usd(150_000) } },
+    ],
+  };
+  const book = new ExposureBook();
+  assert.equal(book.reserve([m], { action: "money.collect", amount: usd(200_000), at }, { id: "c1" }).held, true);
+  assert.equal(book.reserve([m], { action: "money.spend", amount: usd(1000), at }, { id: "s1" }).held, true, "a collection doesn't use up the spend cap");
+  assert.equal(book.usage(m.id, at, "money.spend|*").month.USD, 1000);
+});
+
+test("D02: a new version of a mandate inherits the usage of the version it supersedes", () => {
+  const v1: Mandate = { ...mandate, id: "v1", scopes: [{ action: "money.spend", limits: { per_month: usd(150_000) } }] };
+  const v2: Mandate = { ...v1, id: "v2", supersedes: "v1" };
+  const book = new ExposureBook();
+  assert.equal(book.reserve([v1], { action: "money.spend", amount: usd(140_000), at }, { id: "a" }).held, true);
+  const r = book.reserve([v2], { action: "money.spend", amount: usd(140_000), at }, { id: "b" });
+  assert.equal(denyCode(r.verdict), "limit", "re-issuing the mandate doesn't reset its monthly cap");
+  assert.deepEqual(book.lineage("v2"), ["v2", "v1"]);
+});
+
+test("D03: a widening rule never undoes a wider version the issuer signed; a narrowing rule never widens", () => {
+  const facts = { processor: { settled_volume: 1_000_000 } };
+  const widen: Mandate = {
+    ...mandate,
+    scopes: [{ action: "money.refund", limits: { per_action: usd(200_000) }, require_approval_over: usd(100_000) }],
+    progression: [{ when: { metric: "settled_volume", op: ">=", value: 500_000, source: "processor" }, then: { action: "money.refund", set: { require_approval_over: usd(50_000) } }, effect: "widen" }],
+  };
+  const p = applyProgression(widen, facts, at);
+  assert.equal(p.fired.length, 0, "the signed version is already wider: satisfied, not narrowed");
+  assert.equal(p.mandate.scopes[0].require_approval_over?.amount, 100_000);
+  const narrow: Mandate = { ...widen, progression: [{ ...widen.progression![0], effect: "narrow", then: { action: "money.refund", set: { require_approval_over: usd(150_000) } } }] };
+  const q = applyProgression(narrow, facts, at);
+  assert.equal(q.fired.length, 0);
+  assert.equal(q.refused.length, 1, "a narrowing rule that would widen is refused");
+});
+
+test("D04: an old log isn't measured as of today", () => {
+  const ev = zh3Company();
+  assert.equal(score(ev, manifest, { asOf: FIXTURE_AS_OF, chainVerified: true }).profile.assurance, "measured");
+  const later = score(ev, manifest, { asOf: "2026-09-30T00:00:00Z", chainVerified: true });
+  assert.equal(later.profile.assurance, "provisional", "the evidence ends a month before asOf");
+});

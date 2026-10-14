@@ -102,6 +102,8 @@ export const THRESHOLDS = {
   window_days: 90,
   measured_min_days: 30,
   measured_min_events: 200,
+  /** "measured" also needs evidence that reaches within this many days of asOf: an old log isn't current. */
+  measured_max_gap_days: 7,
   attestation_ttl_days: 90,
 
   O: {

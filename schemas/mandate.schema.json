@@ -137,6 +137,13 @@
           },
           "note": {
             "type": "string"
+          },
+          "effect": {
+            "enum": [
+              "widen",
+              "narrow"
+            ],
+            "description": "A widen rule never narrows (once satisfied it does nothing); a narrow rule never widens."
           }
         }
       },

@@ -189,7 +189,7 @@ Scope (S0–S5) describes how complex the business is: Single Task, Single Funct
 |---|---|---|
 | **claimed** | Self-assessment questionnaire. Integrity capped at B. | Orientation. Nothing was checked. |
 | **provisional** | Computed from evidence, but under 30 days or under 200 events, or the hash chain wasn't verified. | Internal tracking. |
-| **measured** | Computed by the reference method from ≥30 days and ≥200 events of a hash-chained log whose chain the scorer's caller verified (`chainVerified`). | That the company's own log, as written, supports the profile. **Not** that the log is complete or true: the company wrote it. v0.3 will require external records (payment processors, inboxes, counterparties) for the events that move the score. |
+| **measured** | Computed by the reference method from ≥30 days and ≥200 events of a hash-chained log whose chain the scorer's caller verified (`chainVerified`), with its last event no more than 7 days before `asOf`. | That the company's own log, as written, supports the profile. **Not** that the log is complete or true: the company wrote it. v0.3 will require external records (payment processors, inboxes, counterparties) for the events that move the score. |
 | **attested** | A measured profile that an independent validator recomputed and signed over a specific evidence head, after sampling external sources. Expires after 90 days. | What the validator checked, as stated in the attestation. Only a validator can produce it; a company's own score is at most measured. |
 
 ## 8. What a profile does not tell you
@@ -228,7 +228,7 @@ A human rescue ends the current qualifying period, even when the rescue was the 
 | Integrity | Missing evidence counted as perfect; blocked attempts graded; any money movement counted as an AI action | Applicability and observation: A and B need every applicable metric observed, otherwise U; decisive misconduct counts before a metric is observed; only the AI's own actions count toward the volume floor; control effectiveness reported separately | "No evidence of misconduct" became "exemplary" |
 | ZH5 name | Chartered Zero Human Company | Chartered Autonomous Company; "zero-human runtime" is a separate statement | The gates allow some human work |
 | Level sentences | "buys from the network"; "runs its strategy, people act as a board"; "untouched" | Say no more than the gates test | Plain-language claims overstated the tests |
-| Scoring input | `asOf` optional; events of any company accepted | `asOf` required; every event must belong to the scored company | Old logs looked current; profiles could be relabelled |
+| Scoring input | `asOf` optional; events of any company accepted | `asOf` required; every event must belong to the scored company; "measured" needs evidence within 7 days of `asOf` | Old logs looked current; profiles could be relabelled |
 | Assurance | `score()` could mark a profile attested | Only a validator's verified attestation can | Self-attestation by option |
 
 ### v0.1 → v0.2

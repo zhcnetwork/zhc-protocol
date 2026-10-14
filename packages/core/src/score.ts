@@ -530,7 +530,10 @@ export function score(allEvents: ZHCEvent[], manifest: Manifest | undefined, opt
   const fromMs = asOfMs - windowDays * DAY_MS;
   const events = sorted.filter((e) => Date.parse(e.ts) >= fromMs);
   const exposureStart = Math.max(fromMs, firstEverMs);
-  const spanDays = Math.max(0, (asOfMs - exposureStart) / DAY_MS);
+  // The span is what the evidence covers, from its start in the window to its last event.
+  const lastMs = sorted.length ? Date.parse(sorted[sorted.length - 1].ts) : asOfMs;
+  const spanDays = Math.max(0, (Math.min(asOfMs, lastMs) - exposureStart) / DAY_MS);
+  const gapDays = sorted.length ? Math.max(0, (asOfMs - lastMs) / DAY_MS) : Infinity;
 
   const o = scoreO(events, manifest);
   const d = scoreD(events);
@@ -546,7 +549,8 @@ export function score(allEvents: ZHCEvent[], manifest: Manifest | undefined, opt
   // A company's own score is at most "measured": "attested" exists only inside an independent
   // validator's verified attestation (attestation.ts).
   const enough = spanDays >= THRESHOLDS.measured_min_days && events.length >= THRESHOLDS.measured_min_events;
-  const assurance: Assurance = enough && opts.chainVerified === true ? "measured" : "provisional";
+  const current = gapDays <= THRESHOLDS.measured_max_gap_days;
+  const assurance: Assurance = enough && current && opts.chainVerified === true ? "measured" : "provisional";
 
   return {
     profile: {
@@ -568,8 +572,18 @@ export function score(allEvents: ZHCEvent[], manifest: Manifest | undefined, opt
   };
 }
 
-/** True when the event count and span are enough for "measured" (the chain must also verify). */
+/**
+ * True when the evidence is long enough, large enough and recent enough for "measured" (the chain
+ * must also verify).
+ */
 export function hasMeasuredVolume(report: ScoreReport): boolean {
-  return (report.metrics.span_days ?? 0) >= THRESHOLDS.measured_min_days && (report.profile.window?.events ?? 0) >= THRESHOLDS.measured_min_events;
+  const gap = report.metrics.evidence_gap_hours;
+  return (
+    (report.metrics.span_days ?? 0) >= THRESHOLDS.measured_min_days &&
+    (report.profile.window?.events ?? 0) >= THRESHOLDS.measured_min_events &&
+    gap !== null &&
+    gap !== undefined &&
+    gap / 24 <= THRESHOLDS.measured_max_gap_days
+  );
 }
 

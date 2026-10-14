@@ -83,6 +83,13 @@ export interface ProgressionRule {
   when: ProgressionCondition | ProgressionCondition[];
   /** Which scope to change (by action, and domain if given) and the new values. */
   then: { action: MandateAction; domain?: string; set: Partial<MandateScope> };
+  /**
+   * What the rule is for. A `widen` rule never narrows: once the scope is at least as wide, it is
+   * satisfied and does nothing, so it can't undo a wider version the issuer signed. A `narrow` rule
+   * never widens. Without it, the rule applies whichever way it points (self-sourced rules still
+   * can't widen).
+   */
+  effect?: "widen" | "narrow";
   note?: string;
 }
 
@@ -205,6 +212,7 @@ export function validateMandate(m: Mandate): string[] {
     }
     if (!r?.then || typeof r.then.action !== "string" || !r.then.set || typeof r.then.set !== "object") problems.push(`progression rule ${i + 1} has no target scope or change`);
     else if ("action" in r.then.set || "domain" in r.then.set) problems.push(`progression rule ${i + 1} may not change a scope's action or area`);
+    if (r?.effect !== undefined && r.effect !== "widen" && r.effect !== "narrow") problems.push(`progression rule ${i + 1} has an unknown effect`);
   }
   const b = m.bindings;
   for (const [label, money] of [["bindings.mpp.session_limit", b?.mpp?.session_limit], ["bindings.x402.max_amount", b?.x402?.max_amount]] as const) {
@@ -248,7 +256,13 @@ export function selectScope(m: Mandate, req: ActionRequest): { scope: MandateSco
   return { code: "scope", reason: `no scope grants ${req.action} in ${req.domain}` };
 }
 
-export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedger = EMPTY_USAGE): Verdict {
+/**
+ * Usage already counted against a mandate: a ledger, or a function that returns the ledger for the
+ * scope the request selects (limits belong to a scope, so other scopes' flows don't count).
+ */
+export type UsageSource = UsageLedger | ((scope: MandateScope) => UsageLedger);
+
+export function evaluate(mandate: Mandate, req: ActionRequest, usageSource: UsageSource = EMPTY_USAGE): Verdict {
   const deny = (code: DenyCode, reason: string): Verdict => ({ decision: "deny", code, reason });
 
   // 0. Well-formedness: nothing malformed reaches a limit check.
@@ -303,6 +317,7 @@ export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedge
   }
   const amt = req.amount;
   if (amt) {
+    const usage = typeof usageSource === "function" ? usageSource(scope) : usageSource;
     const l = scope.limits ?? {};
     const dayUsed = (usage.day[amt.currency] ?? 0) + amt.amount;
     const monthUsed = (usage.month[amt.currency] ?? 0) + amt.amount;
@@ -329,10 +344,14 @@ export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedge
 /**
  * Evaluate an action under a delegated mandate and every ancestor. `chain[0]` is the subject's
  * mandate; each next element is its delegation parent. Any deny denies; any approval band requires
- * approval. `usageOf` must return usage shared by everything that spends under that mandate,
- * including its descendants (see ExposureBook).
+ * approval. `usageOf` must return usage shared by everything that spends under that mandate (all its
+ * versions, and its descendants) for the scope the request selects in it (see ExposureBook).
  */
-export function evaluateChain(chain: Mandate[], req: ActionRequest, usageOf: (mandateId: string) => UsageLedger = () => EMPTY_USAGE): Verdict {
+export function evaluateChain(
+  chain: Mandate[],
+  req: ActionRequest,
+  usageOf: (mandateId: string, scope: MandateScope) => UsageLedger = () => EMPTY_USAGE,
+): Verdict {
   if (!chain.length) return { decision: "deny", code: "invalid", reason: "no mandate" };
   // The chain must reach its root: leaving out a parent would skip its revocation and its limits.
   const root = chain[chain.length - 1];
@@ -349,7 +368,7 @@ export function evaluateChain(chain: Mandate[], req: ActionRequest, usageOf: (ma
   let approval: Verdict | undefined;
   let leaf: Verdict | undefined;
   for (const m of chain) {
-    const v = evaluate(m, req, usageOf(m.id));
+    const v = evaluate(m, req, (scope) => usageOf(m.id, scope));
     if (v.decision === "deny") return { ...v, reason: m === chain[0] ? v.reason : `${m.id}: ${v.reason}` };
     if (v.decision === "require_approval" && !approval) approval = v;
     if (!leaf) leaf = v;
@@ -361,30 +380,59 @@ export interface Reservation {
   id: string;
   /** Every mandate in the chain the amount counts against. */
   mandates: string[];
+  /** The scope each of those mandates selected for the request (`scopeKey()`), in the same order. */
+  scopes?: string[];
   amount: Money;
   at: string;
   state: "held" | "committed" | "released";
 }
 
+/** Identifies a scope within a mandate's grant: `action|domain`, with `*` for an area-less scope. */
+export const scopeKey = (s: Pick<MandateScope, "action" | "domain">): string => `${s.action}|${s.domain ?? "*"}`;
+
 /**
  * Exposure accounting shared across a delegation chain. Reserve before acting, commit once the
- * effect is confirmed, release if it didn't happen. A parent's daily cap therefore bounds the sum of
- * everything spent under it and its descendants.
+ * effect is confirmed, release if it didn't happen. Usage belongs to a *grant* and a *scope*:
+ * - a parent's cap bounds the sum of everything spent under it and its descendants;
+ * - a new version of a mandate (`supersedes`) inherits the usage of the versions before it, so
+ *   re-issuing a mandate can't reset a daily or monthly limit;
+ * - an amount counts only against the scope each mandate selected for it, so one scope's flows
+ *   (say, collections) don't use up another's cap (say, spending).
  */
 export class ExposureBook {
   #res = new Map<string, Reservation>();
+  #supersedes = new Map<string, string>();
 
-  constructor(reservations: Reservation[] = []) {
+  constructor(reservations: Reservation[] = [], mandates: Pick<Mandate, "id" | "supersedes">[] = []) {
     for (const r of reservations) this.#res.set(r.id, { ...r });
+    for (const m of mandates) this.learn(m);
   }
 
-  usage(mandateId: string, at: string): UsageLedger {
+  /** Records that a mandate supersedes an earlier version. reserve() learns this from every chain it sees. */
+  learn(m: Pick<Mandate, "id" | "supersedes">): void {
+    if (m.supersedes && m.supersedes !== m.id) this.#supersedes.set(m.id, m.supersedes);
+  }
+
+  /** A mandate and every version it supersedes, newest first. */
+  lineage(mandateId: string): string[] {
+    const out: string[] = [];
+    for (let id: string | undefined = mandateId; id !== undefined && !out.includes(id); id = this.#supersedes.get(id)) out.push(id);
+    return out;
+  }
+
+  /** Usage under a mandate's grant on the day and month of `at`; for one scope if `scope` (a scopeKey) is given. */
+  usage(mandateId: string, at: string, scope?: string): UsageLedger {
     const iso = new Date(at).toISOString();
     const day = iso.slice(0, 10);
     const month = iso.slice(0, 7);
+    const grant = new Set(this.lineage(mandateId));
     const out: UsageLedger = { day: {}, month: {} };
     for (const r of this.#res.values()) {
-      if (r.state === "released" || !r.mandates.includes(mandateId)) continue;
+      if (r.state === "released") continue;
+      const i = r.mandates.findIndex((m) => grant.has(m));
+      if (i < 0) continue;
+      // Reservations without scope keys (recorded by older code) count against every scope.
+      if (scope !== undefined && r.scopes?.[i] !== undefined && r.scopes[i] !== scope) continue;
       const rIso = new Date(r.at).toISOString();
       if (rIso.slice(0, 7) === month) out.month[r.amount.currency] = (out.month[r.amount.currency] ?? 0) + r.amount.amount;
       if (rIso.slice(0, 10) === day) out.day[r.amount.currency] = (out.day[r.amount.currency] ?? 0) + r.amount.amount;
@@ -399,11 +447,16 @@ export class ExposureBook {
    */
   reserve(chain: Mandate[], req: ActionRequest, opts: { id: string; approved?: boolean }): { verdict: Verdict; held: boolean } {
     if (this.#res.has(opts.id)) throw new Error(`reservation ${opts.id} already exists`);
-    const verdict = evaluateChain(chain, req, (id) => (validTime(req.at) ? this.usage(id, req.at) : EMPTY_USAGE));
+    for (const m of chain) this.learn(m);
+    const verdict = evaluateChain(chain, req, (id, scope) => (validTime(req.at) ? this.usage(id, req.at, scopeKey(scope)) : EMPTY_USAGE));
     const permitted = verdict.decision === "allow" || (verdict.decision === "require_approval" && opts.approved === true);
     if (!permitted) return { verdict, held: false };
     if (req.amount) {
-      this.#res.set(opts.id, { id: opts.id, mandates: chain.map((m) => m.id), amount: { ...req.amount }, at: req.at, state: "held" });
+      const scopes = chain.map((m) => {
+        const picked = selectScope(m, req);
+        return "scope" in picked ? scopeKey(picked.scope) : "";
+      });
+      this.#res.set(opts.id, { id: opts.id, mandates: chain.map((m) => m.id), scopes, amount: { ...req.amount }, at: req.at, state: "held" });
     }
     return { verdict, held: true };
   }
@@ -419,7 +472,7 @@ export class ExposureBook {
   }
 
   list(): Reservation[] {
-    return [...this.#res.values()].map((r) => ({ ...r }));
+    return [...this.#res.values()].map((r) => ({ ...r, scopes: r.scopes ? [...r.scopes] : undefined }));
   }
 }
 
@@ -588,8 +641,26 @@ export function applyProgression(
       refused.push({ rule, reason: `the change would leave the mandate malformed: ${problems.join("; ")}`, proposed: next });
       continue;
     }
+    const widens = scopeWideningProblems(next, scopes[i]).length > 0;
+    const narrows = scopeWideningProblems(scopes[i], next).length > 0;
+    if (rule.effect === "widen") {
+      if (narrows) {
+        // Already at least as wide in some respect (e.g. a wider version the issuer signed): the rule
+        // never undoes that. If it would also widen something else, it's malformed for its purpose.
+        if (widens) refused.push({ rule, reason: "a widening rule may not also narrow", proposed: next });
+        continue;
+      }
+      if (!widens) continue; // satisfied
+    }
+    if (rule.effect === "narrow") {
+      if (widens) {
+        refused.push({ rule, reason: "a narrowing rule may not widen", proposed: next });
+        continue;
+      }
+      if (!narrows) continue; // satisfied
+    }
     const selfSourced = conds.some((c) => (c.source ?? "self") === "self");
-    if (selfSourced && scopeWideningProblems(next, scopes[i]).length > 0) {
+    if (selfSourced && widens) {
       refused.push({ rule, reason: "a rule based on the company's own figures may only narrow authority; the issuer must sign any widening", proposed: next });
       continue;
     }

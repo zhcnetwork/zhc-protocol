@@ -135,7 +135,7 @@ Denials are recorded as `conduct.mandate_blocked`, except `counterparty` denials
 
 **Delegated authority is evaluated link by link.** When the subject's mandate was delegated, the request MUST be evaluated against every mandate in the chain up to the root (`evaluateChain()`). The chain MUST be complete: it ends at a mandate with no `parent`, so leaving out an ancestor denies (`invalid`). A revoked mandate anywhere in the chain denies (`revoked`). Any other denial denies. Any approval band requires approval. Every link MUST pass §3.2.
 
-**Limits are shared down the chain.** An amount spent under a delegated mandate counts against that mandate and every ancestor, so a parent's daily cap bounds the total spent under it and all its descendants. The reference `ExposureBook` reserves an amount before acting, commits it once the effect is confirmed, and releases it if the action didn't happen.
+**Limits are shared down the chain, across versions, and per scope.** An amount spent under a delegated mandate counts against that mandate and every ancestor, so a parent's daily cap bounds the total spent under it and all its descendants. A new version of a mandate (`supersedes`) inherits the usage of the versions before it, so re-issuing a mandate can't reset a limit. An amount counts only against the scope each mandate selected for it, so one scope's flows don't use up another's cap. The reference `ExposureBook` reserves an amount before acting, commits it once the effect is confirmed, and releases it if the action didn't happen.
 
 **Re-check at the moment of effect.** Authority is checked when the action takes effect, not only when it is queued. An implementation MUST evaluate the action again, against current mandates and current usage, immediately before it executes. A human approval authorizes one exact action. It satisfies an approval band, but never a hard limit, a revocation or an expiry: if the mandate was revoked or the limit used up while the approval was pending, the action is denied.
 
@@ -162,6 +162,8 @@ A mandate that `supersedes` another replaces it. It isn't delegated from it. The
 ### 3.3 Progressive autonomy
 
 `progression` rules change a scope when conditions hold, for example "after an independent attestation at integrity A, raise the refund limit". A rule has one condition or a list that must all hold. It targets one scope by action and area exactly: a rule with no area targets the area-less scope. A rule MUST NOT change a scope's action or area, and an implementation MUST refuse a change that would leave the mandate malformed.
+
+A rule SHOULD state its `effect`. A `widen` rule never narrows: once the scope is at least as wide, it is satisfied and does nothing, so it can't undo a wider version the issuer signed later. A `narrow` rule never widens.
 
 **Every condition names its source:**
 
