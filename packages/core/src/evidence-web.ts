@@ -2,7 +2,7 @@
 // Same canonical form and SHA-256 as evidence.ts, so hashes are byte-identical. The chain functions
 // work on any sealed record (`Sealable`), not only ZHC events.
 import { canonicalJSON } from "./canonical.ts";
-import type { Sealable } from "./types.ts";
+import type { EvidenceHead, Sealable } from "./types.ts";
 
 function hex(buf: ArrayBuffer): string {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -45,4 +45,11 @@ export async function verifyChainWeb(events: Sealable[], from?: string): Promise
  */
 export function extendsHead(events: Sealable[], held: { head: string; events: number }): boolean {
   return Number.isInteger(held.events) && held.events >= 1 && events.length >= held.events && events[held.events - 1].hash === held.head;
+}
+
+/** Why a head statement is malformed, or undefined if it is well-formed (signature not checked). */
+export function headPayloadProblem(p: EvidenceHead | undefined): string | undefined {
+  if (!p || p.type !== "ZHEvidenceHead" || p.spec !== "0.2") return "not a v0.2 evidence head";
+  if (!/^[0-9a-f]{64}$/.test(p.head) || !Number.isInteger(p.events) || p.events < 1 || !Number.isFinite(Date.parse(p.at))) return "malformed head";
+  return undefined;
 }

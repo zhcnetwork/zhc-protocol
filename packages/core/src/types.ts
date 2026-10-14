@@ -77,8 +77,11 @@ export interface DecisionMade extends EventBase {
   /** Who originated the option that was chosen. */
   origin: Actor;
   decided_by: Actor;
-  /** pre = approved before acting; post_veto_window = acted, human could veto afterwards. */
-  approval: "none" | "pre" | "post_veto_window";
+  /**
+   * pre = approved before acting; post_veto_window = acted, human could veto afterwards;
+   * timeout = escalated, nobody answered within the mandate's timeout, and its on_timeout rule allowed it.
+   */
+  approval: "none" | "pre" | "post_veto_window" | "timeout";
   vetoed?: boolean;
   summary?: string;
 }
@@ -303,7 +306,10 @@ export interface Manifest {
    * that delegate authority. `holder` is the issuer id used in mandates (e.g. "human:owner").
    */
   signing_keys?: { id: string; holder: string; alg: "Ed25519"; public_key_pem: string }[];
-  /** Public keys that sign this company's published evidence heads (PROTOCOL §4.2), and nothing else. */
+  /**
+   * Public keys that sign this company's statements about its own evidence (PROTOCOL §4.2): heads, and
+   * any checkpoints or report seals of its own, each with a distinct `type`. Never mandates or attestations.
+   */
   evidence_keys?: { id: string; alg: "Ed25519"; public_key_pem: string }[];
   evidence?: { uri: string; format: "zhc-events/0.2" };
   parent?: string;

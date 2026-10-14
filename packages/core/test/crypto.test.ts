@@ -107,3 +107,17 @@ test("W03: evidence heads are signed with evidence keys only", async () => {
   assert.equal(verifyHead(byMandateKey, evidenceKeyResolver(company)).ok, false, "a mandate key can't sign the books' head");
   assert.equal(mandateKeyResolver(company)("did:web:co.example", "e1"), undefined, "an evidence key can't sign a mandate");
 });
+
+test("W05: Web Crypto signs and verifies evidence heads byte-identically with node:crypto", async () => {
+  const { signHead, verifyHead, signHeadWeb, verifyHeadWeb, evidenceKeyResolver } = await import("../src/index.ts");
+  const keys = generateIssuerKeys();
+  const company = { id: "did:web:co.example", evidence_keys: [{ id: "e1", alg: "Ed25519" as const, public_key_pem: keys.publicKeyPem }] };
+  const body = { company: company.id, head: "b".repeat(64), events: 12, at: "2026-10-01T00:00:00Z" };
+  const node = signHead(body, keys.privateKey, "e1");
+  const priv = await importEd25519PrivateKey(keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString());
+  const web = await signHeadWeb(body, priv, "e1");
+  assert.equal(web.signature, node.signature, "Ed25519 is deterministic and the canonical bytes match");
+  assert.deepEqual(await verifyHeadWeb(node, evidenceKeyResolver(company)), { ok: true });
+  assert.deepEqual(verifyHead(web, evidenceKeyResolver(company)), { ok: true });
+  assert.equal((await verifyHeadWeb({ ...web, payload: { ...web.payload, events: 0 } }, evidenceKeyResolver(company))).reason, "malformed head");
+});

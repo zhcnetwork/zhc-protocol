@@ -523,3 +523,11 @@ test("W04: an approval band is satisfied by a timeout only if every mandate allo
   assert.equal(book.reserve([deny], req, { id: "d", approvedBy: "timeout", escalatedAt: "2026-06-01T00:00:00Z" }).held, false);
   assert.equal(book.reserve([deny], { ...req, amount: usd(20_000) }, { id: "h", approvedBy: "human" }).held, false, "no approval passes a hard limit");
 });
+
+test("W06: an escalation nobody answered counts as autonomous and is reported", () => {
+  const ev: ZHCEvent[] = [];
+  for (let i = 0; i < 10; i++) ev.push({ ...base(i), type: "decision.made", tier: "tactical", origin: "ai", decided_by: "ai", approval: i < 3 ? "timeout" : "none" });
+  const r = score(ev, undefined, { asOf: "2026-07-05T00:00:00Z" });
+  assert.equal(r.metrics.unanswered_escalations, 3);
+  assert.equal(r.metrics.tactical_autonomy, 1);
+});

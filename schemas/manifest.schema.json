@@ -285,7 +285,7 @@
     },
     "evidence_keys": {
       "type": "array",
-      "description": "Public keys that sign this company's published evidence heads (PROTOCOL §4.2), and nothing else.",
+      "description": "Public keys that sign this company's statements about its own evidence (PROTOCOL §4.2): published heads, and any checkpoints or report seals of its own, each with a distinct type. Never mandates or attestations.",
       "items": {
         "type": "object",
         "required": [

@@ -2,6 +2,8 @@
 // Use these where node:crypto isn't available. Signatures are interchangeable with the node:crypto
 // helpers in signing.ts and attestation.ts (same canonical bytes, same algorithm, base64url).
 import { canonicalBytes } from "./canonical.ts";
+import { headPayloadProblem } from "./evidence-web.ts";
+import type { EvidenceHead, KeyResolver, SignedEvidenceHead } from "./types.ts";
 
 function b64urlEncode(bytes: Uint8Array): string {
   let s = "";
@@ -43,4 +45,25 @@ export async function verifyCanonicalWeb(value: unknown, signature: string, publ
   } catch {
     return false;
   }
+}
+
+/** Web Crypto twin of signHead() in signing.ts: same payload, byte-identical signature. */
+export async function signHeadWeb(head: Omit<EvidenceHead, "type" | "spec" | "kid">, privateKey: CryptoKey, kid: string): Promise<SignedEvidenceHead> {
+  const payload: EvidenceHead = { type: "ZHEvidenceHead", spec: "0.2", ...head, kid };
+  return { payload, signature: await signCanonicalWeb(payload, privateKey) };
+}
+
+/** Web Crypto twin of verifyHead(): resolve the key with evidenceKeyResolver(manifest). */
+export async function verifyHeadWeb(s: SignedEvidenceHead, resolveKey: KeyResolver): Promise<{ ok: boolean; reason?: string }> {
+  const problem = headPayloadProblem(s?.payload);
+  if (problem) return { ok: false, reason: problem };
+  const pem = resolveKey(s.payload.company, s.payload.kid);
+  if (!pem) return { ok: false, reason: "evidence key not trusted" };
+  let key: CryptoKey;
+  try {
+    key = await importEd25519PublicKey(pem);
+  } catch {
+    return { ok: false, reason: "evidence key not trusted" };
+  }
+  return (await verifyCanonicalWeb(s.payload, s.signature, key)) ? { ok: true } : { ok: false, reason: "bad signature" };
 }

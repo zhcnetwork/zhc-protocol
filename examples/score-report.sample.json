@@ -115,6 +115,7 @@
     "operational_autonomy": 0,
     "strategic_autonomy": null,
     "strategic_veto_rate": null,
+    "unanswered_escalations": 0,
     "money_events": 42,
     "operating_mandate_share": 0.75,
     "capital_allocations": 0,

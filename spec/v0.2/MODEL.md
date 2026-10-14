@@ -61,7 +61,7 @@ Decisions fall into four tiers:
 - **strategic:** a new product, a new market, a pricing model;
 - **charter:** the mission, ownership, dissolution, the charter itself.
 
-*Charter decisions are reserved to the accountable human at every level.* A decision counts as autonomous when AI decided it without pre-approval and it wasn't vetoed afterwards.
+*Charter decisions are reserved to the accountable human at every level.* A decision counts as autonomous when AI decided it without pre-approval and it wasn't vetoed afterwards. A decision that went to a person and proceeded only because nobody answered in time (`approval: "timeout"`, allowed by the mandate's `on_timeout` rule) counts as autonomous too, like one a person could have vetoed; the number of unanswered escalations is reported.
 
 | Level | Name | Criterion |
 |---|---|---|

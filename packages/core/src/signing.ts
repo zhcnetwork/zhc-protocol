@@ -2,6 +2,7 @@
 // crypto-web.ts signs and verifies the same canonical bytes with Web Crypto.
 import { createPublicKey, sign, verify, type KeyObject } from "node:crypto";
 import { canonicalJSON } from "./canonical.ts";
+import { headPayloadProblem } from "./evidence-web.ts";
 import type { EvidenceHead, KeyResolver, SignedEvidenceHead } from "./types.ts";
 import type { Mandate } from "./mandate.ts";
 
@@ -38,11 +39,9 @@ export function signHead(head: Omit<EvidenceHead, "type" | "spec" | "kid">, priv
 
 /** Verify a head statement with the company's evidence key (`evidenceKeyResolver(manifest)`). */
 export function verifyHead(s: SignedEvidenceHead, resolveKey: KeyResolver): { ok: boolean; reason?: string } {
-  const p = s?.payload;
-  if (!p || p.type !== "ZHEvidenceHead" || p.spec !== "0.2") return { ok: false, reason: "not a v0.2 evidence head" };
-  if (!/^[0-9a-f]{64}$/.test(p.head) || !Number.isInteger(p.events) || p.events < 1 || !Number.isFinite(Date.parse(p.at))) {
-    return { ok: false, reason: "malformed head" };
-  }
+  const problem = headPayloadProblem(s?.payload);
+  if (problem) return { ok: false, reason: problem };
+  const p = s.payload;
   const pem = resolveKey(p.company, p.kid);
   if (!pem) return { ok: false, reason: "evidence key not trusted" };
   try {

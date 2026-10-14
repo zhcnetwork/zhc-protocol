@@ -171,7 +171,17 @@ function scoreD(events: ZHCEvent[]): { result: AxisResult; metrics: Record<strin
   ]);
   return {
     result,
-    metrics: { decisions: ds.length, operational_decisions: ops.length, tactical_autonomy: rTac, operational_autonomy: rOps, strategic_autonomy: rStr, strategic_veto_rate: veto },
+    metrics: {
+      decisions: ds.length,
+      operational_decisions: ops.length,
+      tactical_autonomy: rTac,
+      operational_autonomy: rOps,
+      strategic_autonomy: rStr,
+      strategic_veto_rate: veto,
+      // Escalations nobody answered, which the mandate's timeout rule then allowed. They count as autonomous,
+      // like a decision a person could have vetoed, and are reported so a validator can see an absent approver.
+      unanswered_escalations: ds.filter((d) => d.approval === "timeout").length,
+    },
   };
 }
 

@@ -151,8 +151,10 @@
           "enum": [
             "none",
             "pre",
-            "post_veto_window"
-          ]
+            "post_veto_window",
+            "timeout"
+          ],
+          "description": "pre = approved before acting; post_veto_window = acted, a person could veto afterwards; timeout = escalated, nobody answered in time, and the mandate's on_timeout rule allowed it."
         },
         "vetoed": {
           "type": "boolean"
