@@ -1,7 +1,7 @@
 // Self-assessment questionnaire -> "claimed" profile. Browser-safe.
 // Claimed profiles are a starting point; measured profiles come from evidence (score.ts).
 import type { Axis, AxisLevel, IntegrityGrade, Profile, ScopeClass } from "./types.ts";
-import { compositeLevel } from "./model.ts";
+import { compositeLevel, METHOD_VERSION } from "./model.ts";
 
 export interface Question {
   id: string;
@@ -21,7 +21,7 @@ export const QUESTIONS: Question[] = [
       { value: 2, label: "AI runs multi-step workflows in at least one area; people spot-check batches." },
       { value: 3, label: "AI runs at least one business area end to end, exceptions included. People only look at aggregate metrics." },
       { value: 4, label: "AI runs every area and hands work between them without a person routing it." },
-      { value: 5, label: "AI also redesigns its own processes: adds roles, retires roles, rewrites workflows, and the changes stick." },
+      { value: 5, label: "AI also improves its own processes: it tests a change against real work, keeps it only if outcomes improve, and can show the evidence." },
     ],
   },
   {
@@ -53,7 +53,7 @@ export const QUESTIONS: Question[] = [
   {
     id: "R",
     axis: "R",
-    prompt: "How long does it run before a person has to step in (not counting scheduled reviews)?",
+    prompt: "How long does it run before a person has to step in to fix or rescue something? (Routine approvals and scheduled reviews don't count here; they are covered by the questions on work, decisions and money.)",
     options: [
       { value: 0, label: "Minutes to hours; anything unexpected stops it." },
       { value: 1, label: "About a working day; known failures are retried automatically." },
@@ -66,7 +66,7 @@ export const QUESTIONS: Question[] = [
   {
     id: "N",
     axis: "N",
-    prompt: "How does it deal with other autonomous companies?",
+    prompt: "How does it deal with other autonomous companies? (Reported beside your level; it doesn't raise or lower it.)",
     options: [
       { value: 0, label: "It doesn't; only ordinary APIs and vendors." },
       { value: 1, label: "It buys services from other autonomous companies." },
@@ -142,6 +142,7 @@ export function claimedProfile(answers: Answers, company = "self-assessed"): Pro
   const { level, limited_by } = compositeLevel(axes);
   return {
     spec: "0.2",
+    method: METHOD_VERSION,
     company,
     level,
     axes,

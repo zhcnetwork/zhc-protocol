@@ -1,11 +1,20 @@
-// ZHC Protocol v0.2 — core types.
+// ZHC Protocol v0.2.1 — core types.
 // Erasable TypeScript only (no enums / parameter properties) so Node can run it with type stripping.
 
+/** Wire-format version carried in every object. Patch revisions (0.2.x) don't change it. */
 export const SPEC_VERSION = "0.2";
+/** Specification revision this code implements. */
+export const SPEC_REVISION = "0.2.1";
 
-/** The five autonomy axes that gate the composite ZH level. */
+/** The five axes of a ZH profile. */
 export type Axis = "O" | "D" | "F" | "R" | "N";
 export const AXES: readonly Axis[] = ["O", "D", "F", "R", "N"];
+/**
+ * The four axes that gate the composite ZH level. Since v0.2.1, N (network participation) is
+ * reported beside the level, like scope, and no longer gates it.
+ */
+export type GatingAxis = Exclude<Axis, "N">;
+export const GATING_AXES: readonly GatingAxis[] = ["O", "D", "F", "R"];
 
 export type AxisLevel = 0 | 1 | 2 | 3 | 4 | 5;
 export type ZHLevel = 0 | 1 | 2 | 3 | 4 | 5;
@@ -102,8 +111,18 @@ export interface HumanIntervention extends EventBase {
   reason?: string;
 }
 
+/** An incident detected but not yet resolved. Open incidents count against recovery (MODEL §3, R). */
+export interface IncidentOpened extends EventBase {
+  type: "incident.opened";
+  severity: "low" | "medium" | "high" | "critical";
+  detected_by: Actor;
+  detected_before_impact: boolean;
+}
+
 export interface IncidentResolved extends EventBase {
   type: "incident.resolved";
+  /** Id of the matching `incident.opened` event, if one was recorded. */
+  incident?: string;
   severity: "low" | "medium" | "high" | "critical";
   detected_by: Actor;
   detected_before_impact: boolean;
@@ -118,6 +137,10 @@ export interface ProcessChanged extends EventBase {
   initiated_by: Actor;
   change: "workflow" | "role_created" | "role_retired" | "policy";
   retained: boolean;
+  /** Was the change tested against comparable work before it was kept? Required for O5. */
+  evaluated?: boolean;
+  /** Measured effect of the change on outcomes or cost at equal quality. Required for O5. */
+  outcome?: "improved" | "neutral" | "worse";
   summary?: string;
 }
 
@@ -201,6 +224,7 @@ export type ZHCEvent =
   | DecisionMade
   | MoneyMoved
   | HumanIntervention
+  | IncidentOpened
   | IncidentResolved
   | ProcessChanged
   | NetworkTransaction
@@ -274,9 +298,30 @@ export interface Manifest {
   mandates_uri?: string;
   /** Public keys this company signs attestations with, if it acts as a validator. */
   validator_keys?: { id: string; alg: "Ed25519"; public_key_pem: string }[];
+  /**
+   * Public keys that sign this company's mandates: the accountable human's, and those of agents
+   * that delegate authority. `holder` is the issuer id used in mandates (e.g. "human:owner").
+   */
+  signing_keys?: { id: string; holder: string; alg: "Ed25519"; public_key_pem: string }[];
   evidence?: { uri: string; format: "zhc-events/0.2" };
   parent?: string;
   profile?: { claimed?: string; attestations?: string[] };
+}
+
+/** Returns a trusted public key (SPKI PEM) for an issuer and key id, or undefined if unknown. */
+export type KeyResolver = (issuer: string, kid?: string) => string | undefined;
+
+/** Key resolver over a manifest's published keys (signing_keys for mandates, validator_keys for attestations). */
+export function manifestKeyResolver(manifest: Pick<Manifest, "id" | "signing_keys" | "validator_keys">): KeyResolver {
+  return (issuer, kid) => {
+    const signing = (manifest.signing_keys ?? []).find((k) => k.holder === issuer && (kid === undefined || k.id === kid));
+    if (signing) return signing.public_key_pem;
+    if (issuer === manifest.id) {
+      const v = (manifest.validator_keys ?? []).find((k) => kid === undefined || k.id === kid);
+      if (v) return v.public_key_pem;
+    }
+    return undefined;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -289,34 +334,51 @@ export interface AxisResult {
   notes: string[];
 }
 
+/** Status of one conduct metric (MODEL §5). */
+export type Observation = "observed" | "unobserved" | "not_applicable";
+
 export interface IntegrityResult {
   grade: IntegrityGrade;
   metrics: {
-    interactions: number;
     actions: number;
+    interactions: number;
     deception_major: number;
-    deception_minor_unremediated: number;
     deception_minor: number;
+    deception_minor_unremediated: number;
     breaches: number;
-    blocked_per_1k_actions: number;
-    complaints_per_1k_interactions: number;
+    complaints: number;
+    complaints_major: number;
+    /** Weighted: a major complaint counts as THRESHOLDS.integrity.complaint_major_weight minor ones. */
+    complaints_per_1k_interactions: number | null;
+    refund_requests_eligible: number;
     refund_honor_rate: number | null;
     disclosure_rate: number | null;
   };
+  /** Whether each metric was applicable and observed. A and B need every applicable metric observed. */
+  observation: { disclosure: Observation; complaints: Observation; refunds: Observation };
+  /**
+   * Control effectiveness: attempts the policy engine stopped. Reported, never graded, so that
+   * logging denials can't cost a company its grade.
+   */
+  control: { blocked: number; blocked_per_1k_actions: number | null };
   notes: string[];
 }
 
 export interface Profile {
   spec: "0.2";
+  /** Scoring method that produced this profile, e.g. "zhc-score/0.2.1". */
+  method: string;
   company: string;
   level: ZHLevel;
   axes: Record<Axis, AxisLevel>;
   scope: ScopeClass;
+  /** Scope is taken from the manifest and not yet checked against evidence (v0.2.1). */
+  scope_basis?: "declared";
   integrity: IntegrityGrade;
   assurance: Assurance;
   window?: { from: string; to: string; days: number; events: number };
-  /** Axis that capped the composite level (the "weakest link"), if any. */
-  limited_by?: Axis[];
+  /** Gating axes that hold the composite below the next level (the "weakest links"). */
+  limited_by?: GatingAxis[];
 }
 
 export interface ScoreReport {

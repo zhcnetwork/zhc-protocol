@@ -1,15 +1,15 @@
 // Evidence log: append-only, hash-chained ZHC events. Node only (uses node:crypto).
+// evidence-web.ts implements the same chain with Web Crypto for browsers and Workers;
+// both produce byte-identical hashes (test/crypto.test.ts).
+//
+// What a valid chain proves, and what it doesn't (PROTOCOL §4.2): it proves the events are
+// internally consistent and unedited since the head you hold was computed. It does not prove the
+// events happened, that none were left out, or that timestamps are honest.
 import { createHash } from "node:crypto";
+import { canonicalJSON } from "./canonical.ts";
 import type { ZHCEvent } from "./types.ts";
 
-/** Deterministic JSON: object keys sorted recursively, no whitespace. */
-export function canonicalJSON(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJSON).join(",")}]`;
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJSON(obj[k])}`).join(",")}}`;
-}
+export { canonicalJSON } from "./canonical.ts";
 
 export function hashEvent(e: ZHCEvent): string {
   const { hash: _ignored, ...rest } = e;

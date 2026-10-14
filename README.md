@@ -12,18 +12,18 @@ AI agents can now message each other (A2A), use tools (MCP), and pay (x402, MPP,
 
 The goal is not one zero-human company. It is a **zero-human economy**: companies run by AI that find each other, rate each other, buy from, insure and partner with each other, and found new companies, each with one named person who answers for it.
 
-Every working economy rests on a handful of institutions: a company register, contracts and signing authority, accounting, and auditors. Strangers can do business because those institutions let them check each other first. A zero-human economy needs the same institutions in a form machines can read and check in milliseconds. That is all ZHC is:
+Every working economy rests on a handful of institutions: a company register, contracts and signing authority, accounting, and auditors. Strangers can do business because those institutions let them check each other first. A zero-human economy needs machine-readable counterparts that can be checked in milliseconds. ZHC specifies four of them. Each plays a similar role to the institution it is named after, and none of them is that institution:
 
-| An economy needs | Every company has | ZHC object |
-|---|---|---|
-| A company register | Articles of incorporation | **Manifest** |
-| Contracts and delegated authority | A signing-authority matrix | **Mandate** |
-| Accounting | Books that can be audited | **Evidence** |
-| Auditors and credit ratings | An auditor's opinion | **Attestation** and the ZH profile |
+| An economy has | ZHC object | What it is | What it is not |
+|---|---|---|---|
+| A company register | **Manifest** | A file the company publishes about itself | Proof of incorporation |
+| Signing authority | **Mandate** | Machine-checkable limits on each agent | A statement of what binds the company in law |
+| Books that can be audited | **Evidence** | An operating log sealed with hashes | Financial accounts, or proof that nothing was left out |
+| Auditors and ratings | **Attestation** and the ZH profile | A validator's signed recomputation of the profile | An audit opinion or a credit rating |
+
+Banks, dispute forums and insurance are not covered yet. [PROTOCOL §0](spec/v0.2/PROTOCOL.md#0-purpose-the-institutions-of-a-zero-human-economy) has the details.
 
 ## The four objects
-
-ZHC answers those questions with four objects and one model:
 
 | | Object | Question | Spec |
 |---|---|---|---|
@@ -36,43 +36,53 @@ ZHC answers those questions with four objects and one model:
 A profile looks like this:
 
 ```
-ZH3·A [O3 D2 F2 R2 N1] S2 attested
+ZH3·A [O3 D2 F2 R2] N1 S2 attested
 ```
 
-Business Operator, integrity A, with five autonomy axes, scope class 2, signed by an independent validator.
+ZH3 (Business Operator), integrity A. The level is set by the weakest of four axes: operations, decisions, finance and resilience. Network participation (N1) and scope (S2) are reported beside it. An independent validator signed it.
 
 ## Repository
 
 ```
 spec/v0.2/        MODEL.md (maturity model) · PROTOCOL.md (objects, rules, conformance)
 schemas/          JSON Schemas: manifest, mandate, event, attestation
-examples/         ZH Rating Desk manifest, a billing mandate, sample evidence, attestation, score report
+examples/         manifests (a reference validator desk, an example validator, a test company),
+                  a signed mandate, sample evidence, a score report and an attestation
 packages/core/    Reference implementation (TypeScript, zero runtime dependencies)
 ```
+
+The examples are generated from the test fixtures with published example keys, and `npm test` fails if they drift.
 
 ## Reference implementation
 
 ```bash
 cd packages/core
-node --test test/*.test.ts      # Node ≥ 22.18 runs the TypeScript directly
+npm test             # Node ≥ 22.18 runs the TypeScript directly
+npm run examples     # regenerate /examples
 ```
 
 ```ts
-import { score, formatProfile, evaluate, verifyChain } from "./packages/core/src/index.ts";
+import { score, formatProfile, evaluateChain, ExposureBook, verifyChain, verifyAttestation, manifestKeyResolver } from "./packages/core/src/index.ts";
 
 const { ok } = verifyChain(events);
-const report = score(events, manifest, { chainVerified: ok });
-formatProfile(report.profile);         // "ZH3·A [O3 D2 F2 R2 N1] S2 measured"
+const report = score(events, manifest, { asOf: new Date().toISOString(), chainVerified: ok });
+formatProfile(report.profile);         // "ZH3·A [O3 D2 F2 R2] N1 S2 measured"
 report.profile.limited_by;             // axes blocking the next level
-evaluate(mandate, { action: "money.refund", amount: { amount: 3000, currency: "USD" }, at });
-// → { decision: "allow" | "require_approval" | "deny", ... }
+
+// Authority: evaluate against the agent's mandate and every mandate above it, with shared limits.
+const book = new ExposureBook();
+book.reserve([agentMandate, parentMandate], { action: "money.refund", amount: { amount: 3000, currency: "USD" }, at }, { id: "refund-1" });
+// → { verdict: { decision: "allow" | "require_approval" | "deny", ... }, held }
+
+// Attestations verify only against the issuer's published keys.
+verifyAttestation(attestation, { resolveKey: manifestKeyResolver(validatorManifest) });
 ```
 
-`src/browser.ts` exports the browser-safe subset (no `node:crypto`).
+`src/browser.ts` exports the subset that runs in browsers and Workers (hashing and signing through Web Crypto).
 
 ## Status
 
-v0.2 is a **draft for public comment**. Thresholds are provisional and will be calibrated against real measured profiles.
+**v0.2.1**, a draft for public comment. This revision fixes problems found in independent reviews of v0.2. Mandate evaluation now fails closed, a company can no longer widen its own authority from its own score, and missing evidence no longer counts as good conduct. See the [changelog](CHANGELOG.md). Objects still carry wire version `0.2`. Thresholds are provisional and will be calibrated against real measured profiles.
 
 ## License
 

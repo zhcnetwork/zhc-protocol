@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyProgression,
+  attestedFacts,
   claimedProfile,
   compositeLevel,
   evaluate,
@@ -9,6 +10,7 @@ import {
   generateIssuerKeys,
   isAttenuationOf,
   issueAttestation,
+  METHOD_VERSION,
   parseProfile,
   profileId,
   score,
@@ -19,27 +21,39 @@ import {
   type Mandate,
   type ZHCEvent,
 } from "../src/index.ts";
-import { COMPANY, manifest, zh3Company } from "./fixtures.ts";
+import { COMPANY, FIXTURE_AS_OF, manifest, zh3Company } from "./fixtures.ts";
 
-test("composite level is gated by the weakest axis", () => {
-  assert.deepEqual(compositeLevel({ O: 4, D: 4, F: 1, R: 3, N: 2 }), { level: 2, limited_by: ["F"] });
-  assert.equal(compositeLevel({ O: 5, D: 5, F: 5, R: 4, N: 3 }).level, 5);
-  assert.equal(compositeLevel({ O: 0, D: 0, F: 0, R: 0, N: 0 }).level, 0);
+const asOf = FIXTURE_AS_OF;
+
+test("composite level is gated by the weakest of O, D, F and R", () => {
+  assert.deepEqual(compositeLevel({ O: 4, D: 4, F: 1, R: 3 }), { level: 2, limited_by: ["F"] });
+  assert.equal(compositeLevel({ O: 5, D: 5, F: 5, R: 4 }).level, 5);
+  assert.equal(compositeLevel({ O: 0, D: 0, F: 0, R: 0 }).level, 0);
 });
 
-test("v0.2 fixes the v0.1 contradiction: a single-product company can reach ZH5", () => {
-  const p = parseProfile("ZH5·A [O5 D5 F5 R4 N3] S2");
+test("a single-product company can reach ZH5, and N doesn't gate it", () => {
+  const p = parseProfile("ZH5·A [O5 D5 F5 R4] N0 S2");
   assert.equal(p.level, 5);
   assert.equal(p.scope, 2);
+  assert.equal(p.axes.N, 0);
 });
 
 test("profile strings round-trip and reject false claims", () => {
   const p = { level: 3 as const, integrity: "B" as const, axes: { O: 3, D: 2, F: 2, R: 2, N: 1 } as const, scope: 2 as const, assurance: "measured" as const };
   const s = formatProfile(p);
-  assert.equal(s, "ZH3·B [O3 D2 F2 R2 N1] S2 measured");
-  assert.deepEqual(parseProfile(s), p);
-  assert.equal(profileId(p), "zh0.2/3/B/O3D2F2R2N1/S2/measured");
-  assert.throws(() => parseProfile("ZH4·B [O3 D2 F2 R2 N1] S2"), /compute to ZH3/);
+  assert.equal(s, "ZH3·B [O3 D2 F2 R2] N1 S2 measured");
+  assert.deepEqual(parseProfile(s), { ...p, method: METHOD_VERSION });
+  assert.equal(profileId(p), "zh0.2.1/3/B/O3D2F2R2/N1/S2/measured");
+  assert.throws(() => parseProfile("ZH4·B [O3 D2 F2 R2] N1 S2"), /compute to ZH3/);
+});
+
+test("legacy v0.2.0 profile strings still parse, validated under the gates they were written with", () => {
+  const legacy = parseProfile("ZH3·B [O3 D2 F2 R2 N1] S2 measured");
+  assert.equal(legacy.level, 3);
+  assert.equal(legacy.method, "zhc-score/0.2.0");
+  // Under v0.2.0, N0 held this company at ZH2.
+  assert.equal(parseProfile("ZH2·B [O3 D2 F2 R2 N0] S2").level, 2);
+  assert.throws(() => parseProfile("ZH3·B [O3 D2 F2 R2 N0] S2"), /compute to ZH2/);
 });
 
 test("no evidence scores ZH0, unrated, provisional", () => {
@@ -47,16 +61,15 @@ test("no evidence scores ZH0, unrated, provisional", () => {
   assert.equal(r.profile.level, 0);
   assert.equal(r.profile.integrity, "U");
   assert.equal(r.profile.assurance, "provisional");
+  assert.equal(r.profile.method, METHOD_VERSION);
 });
 
 test("synthetic business operator scores ZH3 and names the limiting axes", () => {
-  const r = score(zh3Company(), manifest, { chainVerified: true });
+  const r = score(zh3Company(), manifest, { asOf, chainVerified: true });
   assert.deepEqual(r.profile.axes, { O: 3, D: 2, F: 2, R: 2, N: 1 });
-  assert.equal(r.profile.level, 3);
-  assert.equal(r.profile.scope, 2);
-  assert.equal(r.profile.integrity, "A");
-  assert.equal(r.profile.assurance, "measured");
-  assert.deepEqual(r.profile.limited_by, ["O", "D", "F", "R", "N"]);
+  assert.equal(formatProfile(r.profile), "ZH3·A [O3 D2 F2 R2] N1 S2 measured");
+  assert.deepEqual(r.profile.limited_by, ["O", "D", "F", "R"]);
+  assert.equal(r.profile.scope_basis, "declared");
   assert.ok(r.axes.O.notes.some((n) => n.startsWith("✗ L4")));
 });
 
@@ -69,14 +82,22 @@ test("window excludes events older than the window", () => {
 test("integrity: a confirmed major deception is a D regardless of autonomy", () => {
   const ev = zh3Company();
   ev.push({ v: "0.2", id: "x", ts: "2026-08-01T00:00:00Z", company: COMPANY, type: "conduct.deception", severity: "major", remediated: true });
-  assert.equal(scoreIntegrity(ev).grade, "D");
-  assert.equal(score(ev, manifest).profile.level, 3); // autonomy unchanged; integrity reported beside it
+  assert.equal(scoreIntegrity(ev, manifest).grade, "D");
+  assert.equal(score(ev, manifest, { asOf }).profile.level, 3); // autonomy unchanged; integrity reported beside it
 });
 
 test("integrity: unremediated minor deception caps at C, remediated single minor allows B", () => {
   const mk = (remediated: boolean): ZHCEvent => ({ v: "0.2", id: "m", ts: "2026-08-01T00:00:00Z", company: COMPANY, type: "conduct.deception", severity: "minor", remediated });
-  assert.equal(scoreIntegrity([...zh3Company(), mk(true)]).grade, "B");
-  assert.equal(scoreIntegrity([...zh3Company(), mk(false)]).grade, "C");
+  assert.equal(scoreIntegrity([...zh3Company(), mk(true)], manifest).grade, "B");
+  assert.equal(scoreIntegrity([...zh3Company(), mk(false)], manifest).grade, "C");
+});
+
+test("integrity: blocked attempts are reported as control effectiveness and never graded", () => {
+  const ev = zh3Company();
+  for (let i = 0; i < 30; i++) ev.push({ v: "0.2", id: `b${i}`, ts: "2026-08-01T00:00:00Z", company: COMPANY, type: "conduct.mandate_blocked", action: "money.spend", reason: "limit" });
+  const r = scoreIntegrity(ev, manifest);
+  assert.equal(r.grade, "A");
+  assert.equal(r.control.blocked, 30);
 });
 
 const mandate: Mandate = {
@@ -93,7 +114,7 @@ const mandate: Mandate = {
   ],
   escalation: { to: "human:jay", timeout_s: 86400, on_timeout: "deny" },
   progression: [
-    { when: { metric: "integrity", op: ">=", value: "A" }, then: { action: "money.refund", set: { require_approval_over: { amount: 5000, currency: "USD" } } } },
+    { when: { metric: "integrity", op: ">=", value: "A", source: "attestation" }, then: { action: "money.refund", set: { require_approval_over: { amount: 5000, currency: "USD" } } } },
   ],
 };
 const at = "2026-06-01T00:00:00Z";
@@ -115,7 +136,7 @@ test("mandate: decision tiers, charter reserved to the human", () => {
   assert.equal(evaluate(mandate, { action: "decision.make", tier: "charter", at }).decision, "deny");
 });
 
-test("mandate: counterparty checks before buying from another ZHC", () => {
+test("mandate: counterparty checks before buying from another company", () => {
   const ok = { level: 3 as const, integrity: "A" as const, assurance: "attested" as const };
   assert.equal(evaluate(mandate, { action: "network.buy", amount: usd(1000), counterparty: ok, at }).decision, "allow");
   assert.equal(evaluate(mandate, { action: "network.buy", amount: usd(1000), counterparty: { ...ok, integrity: "C" }, at }).decision, "deny");
@@ -124,7 +145,7 @@ test("mandate: counterparty checks before buying from another ZHC", () => {
 });
 
 test("delegated mandates may only narrow their parent", () => {
-  const child: Mandate = { ...mandate, id: "m-2", issuer: "agent:billing", subject: "agent:refunds", parent: "m-1", scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) }, require_approval_over: usd(2000) }] };
+  const child: Mandate = { ...mandate, id: "m-2", issuer: "agent:billing", subject: "agent:refunds", parent: "m-1", progression: [], scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) }, require_approval_over: usd(2000) }] };
   assert.equal(isAttenuationOf(child, mandate).ok, true);
   const greedy: Mandate = { ...child, scopes: [{ action: "money.refund", limits: { per_action: usd(50000) } }, { action: "money.spend" }] };
   const r = isAttenuationOf(greedy, mandate);
@@ -133,11 +154,20 @@ test("delegated mandates may only narrow their parent", () => {
   assert.ok(r.problems.includes("money.refund.per_action exceeds parent"));
 });
 
-test("progressive autonomy widens the approval band when integrity is A", () => {
-  const { mandate: widened, fired } = applyProgression(mandate, { integrity: "A" });
+test("progression widens only on a verified independent attestation", () => {
+  const keys = generateIssuerKeys();
+  const validator = "did:web:validator.example";
+  const resolveKey = (issuer: string) => (issuer === validator ? keys.publicKeyPem : undefined);
+  const { profile } = score(zh3Company(), manifest, { asOf, chainVerified: true });
+  const att = issueAttestation({ issuer: validator, profile, evidenceHead: "h", now: "2026-09-01T00:00:00Z", privateKey: keys.privateKey });
+  const facts = attestedFacts(att, { resolveKey, now: "2026-09-02T00:00:00Z", subject: COMPANY });
+  assert.ok(facts, "a verified attestation yields facts");
+  const { mandate: widened, fired, refused } = applyProgression(mandate, { attestation: facts });
   assert.equal(fired.length, 1);
+  assert.equal(refused.length, 0);
   assert.equal(evaluate(widened, { action: "money.refund", amount: usd(3000), at }).decision, "allow");
-  assert.equal(applyProgression(mandate, { integrity: "B" }).fired.length, 0);
+  // The same rule never fires on the company's own figures.
+  assert.equal(applyProgression(mandate, { self: { integrity: "A" } }).fired.length, 0);
 });
 
 test("evidence hash chain detects tampering", () => {
@@ -151,27 +181,31 @@ test("evidence hash chain detects tampering", () => {
   assert.deepEqual(verifyChain(tampered), { ok: false, brokenAt: 5, reason: "event hash mismatch" });
 });
 
-test("attestations sign a profile and fail on tamper or expiry", () => {
-  const { profile } = score(zh3Company(), manifest, { chainVerified: true });
+test("attestations sign a profile and fail on tamper or expiry; only resolved keys are trusted", () => {
+  const { profile } = score(zh3Company(), manifest, { asOf, chainVerified: true });
   const keys = generateIssuerKeys();
-  const a = issueAttestation({ issuer: "did:web:ratingdesk.zhc.network", profile, evidenceHead: "abc", now: "2026-09-01T00:00:00Z", ...keys });
+  const issuer = "did:web:validator.example";
+  const resolveKey = (i: string) => (i === issuer ? keys.publicKeyPem : undefined);
+  const a = issueAttestation({ issuer, profile, evidenceHead: "abc", now: "2026-09-01T00:00:00Z", ...keys });
   assert.equal(a.payload.profile.assurance, "attested");
-  assert.deepEqual(verifyAttestation(a, { now: "2026-09-02T00:00:00Z" }), { ok: true });
-  assert.equal(verifyAttestation(a, { now: "2027-01-01T00:00:00Z" }).reason, "expired");
+  assert.equal(a.payload.method, METHOD_VERSION);
+  assert.deepEqual(verifyAttestation(a, { resolveKey, now: "2026-09-02T00:00:00Z" }), { ok: true });
+  assert.equal(verifyAttestation(a, { resolveKey, now: "2027-01-01T00:00:00Z" }).reason, "expired");
   const forged = { ...a, payload: { ...a.payload, profile: { ...a.payload.profile, level: 5 as const } } };
-  assert.equal(verifyAttestation(forged, { now: "2026-09-02T00:00:00Z" }).reason, "bad signature");
+  assert.equal(verifyAttestation(forged, { resolveKey, now: "2026-09-02T00:00:00Z" }).reason, "bad signature");
 });
 
 test("self-assessment yields a claimed profile; self-report can't earn integrity A", () => {
   const p = claimedProfile({ O: 4, D: 3, F: 3, R: 3, N: 2, S: 2, I1: 3, I2: 3, I3: 3 });
-  assert.equal(formatProfile(p), "ZH4·B [O4 D3 F3 R3 N2] S2 claimed");
+  assert.equal(formatProfile(p), "ZH4·B [O4 D3 F3 R3] N2 S2 claimed");
+  assert.equal(p.method, METHOD_VERSION);
   assert.equal(claimedProfile({ O: 4, D: 3, F: 3, R: 3, N: 2, I1: 0, I2: 3, I3: 3 }).integrity, "D");
   assert.equal(claimedProfile({ O: 1 }).integrity, "U");
 });
 
 test("unverified evidence is never measured", () => {
-  assert.equal(score(zh3Company(), manifest).profile.assurance, "provisional");
-  assert.equal(score(zh3Company(), manifest, { chainVerified: false }).profile.assurance, "provisional");
+  assert.equal(score(zh3Company(), manifest, { asOf }).profile.assurance, "provisional");
+  assert.equal(score(zh3Company(), manifest, { asOf, chainVerified: false }).profile.assurance, "provisional");
 });
 
 test("hard limits beat approval bands: approval can't push through a forbidden change", () => {
@@ -189,14 +223,18 @@ test("counterparty denials carry a screening code", () => {
 
 test("attestations require a measured profile and an independent issuer", () => {
   const keys = generateIssuerKeys();
-  const provisional = score(zh3Company(), manifest).profile;
+  const provisional = score(zh3Company(), manifest, { asOf }).profile;
   assert.throws(() => issueAttestation({ issuer: "did:web:v.example", profile: provisional, evidenceHead: "x", ...keys }), /only measured/);
-  const measured = score(zh3Company(), manifest, { chainVerified: true }).profile;
+  const measured = score(zh3Company(), manifest, { asOf, chainVerified: true }).profile;
   assert.throws(() => issueAttestation({ issuer: COMPANY, profile: measured, evidenceHead: "x", ...keys }), /own company/);
+  assert.throws(
+    () => issueAttestation({ issuer: "did:web:v.example", profile: measured, evidenceHead: "x", independence: { common_control: true, fee_depends_on_outcome: false }, ...keys }),
+    /common control/,
+  );
 });
 
 test("attenuation also checks approval bands, change limits, counterparty rules and revocation", () => {
-  const base: Mandate = { ...mandate, id: "c", parent: "m-1", scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) } }] };
+  const base: Mandate = { ...mandate, id: "c", issuer: "agent:billing", parent: "m-1", progression: [], scopes: [{ action: "money.refund", limits: { per_action: usd(5000), per_day: usd(10000) } }] };
   assert.ok(isAttenuationOf(base, mandate).problems.includes("money.refund.require_approval_over exceeds parent"));
   const weak: Mandate = { ...base, scopes: [{ action: "network.buy", limits: { per_action: usd(1000) }, counterparty: { min_level: 1, min_integrity: "C" } }] };
   const p = isAttenuationOf(weak, mandate).problems;
@@ -210,17 +248,18 @@ test("attenuation also checks approval bands, change limits, counterparty rules 
   assert.ok(isAttenuationOf(ok, { ...mandate, revoked: true }).problems.includes("parent is revoked"));
 });
 
-test("progression supports AND conditions, domain targeting, and leaves limits alone", () => {
+test("progression supports AND conditions and domain targeting; self figures may narrow", () => {
   const m: Mandate = {
     ...mandate,
-    scopes: [{ action: "decision.make", domain: "finance", tier_max: "tactical" }, { action: "decision.make", domain: "ops", tier_max: "tactical" }],
-    progression: [{ when: [{ metric: "integrity", op: ">=", value: "B" }, { metric: "operational_autonomy", op: ">=", value: 0.8 }], then: { action: "decision.make", domain: "ops", set: { tier_max: "operational" } } }],
+    scopes: [{ action: "decision.make", domain: "finance", tier_max: "operational" }, { action: "decision.make", domain: "ops", tier_max: "operational" }],
+    progression: [
+      { when: [{ metric: "integrity", op: "<=", value: "C" }, { metric: "complaints", op: ">=", value: 3 }], then: { action: "decision.make", domain: "ops", set: { tier_max: "tactical" } } },
+    ],
   };
-  assert.equal(applyProgression(m, { integrity: "A", operational_autonomy: 0.5 }).fired.length, 0);
-  assert.equal(applyProgression(m, { integrity: "U", operational_autonomy: 0.9 }).fired.length, 0);
-  const { mandate: w, fired } = applyProgression(m, { integrity: "A", operational_autonomy: 0.9 });
+  assert.equal(applyProgression(m, { self: { integrity: "C", complaints: 1 } }).fired.length, 0);
+  const { mandate: narrowed, fired } = applyProgression(m, { self: { integrity: "C", complaints: 4 } });
   assert.equal(fired.length, 1);
-  assert.equal(w.scopes[0].tier_max, "tactical");
-  assert.equal(w.scopes[1].tier_max, "operational");
-  assert.equal("limits" in w.scopes[1], false);
+  assert.equal(narrowed.scopes[0].tier_max, "operational");
+  assert.equal(narrowed.scopes[1].tier_max, "tactical");
+  assert.equal("limits" in narrowed.scopes[1], false);
 });

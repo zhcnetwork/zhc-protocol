@@ -1,0 +1,28 @@
+{
+  "zhc": "0.2",
+  "id": "did:web:validator.example",
+  "name": "Example Validator",
+  "url": "https://validator.example",
+  "legal": { "entity_name": "Example Validator (illustrative)", "jurisdiction": "US-DE" },
+  "accountable_human": { "name": "Accountable human of record", "contact": "accountable@validator.example" },
+  "charter": {
+    "mission": "Recompute and attest ZH profiles of companies we have no stake in.",
+    "reserved_to_human": ["changes to this charter", "dissolution", "scoring method changes"],
+    "prohibited": [
+      "attesting our own company or one under common control",
+      "fees that depend on the profile issued"
+    ]
+  },
+  "domains": ["assessment"],
+  "agents": [
+    { "id": "assessor", "role": "Verifies evidence and recomputes profiles", "domain": "assessment" },
+    { "id": "reviewer", "role": "Approves the release of each attestation", "domain": "assessment" }
+  ],
+  "validator_keys": [
+    {
+      "id": "validator-2026-09",
+      "alg": "Ed25519",
+      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEADYxaagn4wIlmWVpNPuF99PTabEKuTvu6l0p79VREoNg=\n-----END PUBLIC KEY-----\n"
+    }
+  ]
+}

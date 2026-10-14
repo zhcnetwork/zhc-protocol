@@ -1,8 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://zhc.network/schemas/0.2/mandate.schema.json",
+  "$comment": "Wire version 0.2, specification revision 0.2.1. Revisions add optional fields only.",
   "title": "ZHC Mandate v0.2",
-  "description": "A signed grant of business authority from an issuer to an agent.",
+  "description": "A signed grant of business authority from an issuer to an agent. Evaluation fails closed (PROTOCOL §3.1).",
   "type": "object",
   "required": [
     "zhc",
@@ -28,7 +29,12 @@
       "type": "string"
     },
     "parent": {
-      "type": "string"
+      "type": "string",
+      "description": "Delegation parent: the mandate whose subject issued this one (PROTOCOL §3.2)."
+    },
+    "supersedes": {
+      "type": "string",
+      "description": "An earlier version of the same grant that this one replaces. Not a delegation link."
     },
     "issued_at": {
       "type": "string",
@@ -116,10 +122,34 @@
             "type": "string"
           }
         }
-      }
+      },
+      "description": "Rules that change scopes when conditions hold. A rule with any self-sourced condition may only narrow authority (PROTOCOL §3.3)."
     },
     "bindings": {
       "type": "object"
+    },
+    "signature": {
+      "type": "object",
+      "description": "Issuer's Ed25519 signature over the canonical JSON of the mandate without this member (PROTOCOL §3.5).",
+      "required": [
+        "alg",
+        "kid",
+        "sig"
+      ],
+      "properties": {
+        "alg": {
+          "const": "Ed25519"
+        },
+        "kid": {
+          "type": "string",
+          "description": "Key id, resolved from the manifest's signing_keys or the issuer's DID document."
+        },
+        "sig": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "base64url, no padding."
+        }
+      }
     }
   },
   "$defs": {
@@ -132,10 +162,13 @@
       "properties": {
         "amount": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Integer minor units (cents for USD)."
         },
         "currency": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[A-Z0-9]{3,5}$"
         }
       }
     },
@@ -219,7 +252,8 @@
                 "attested"
               ]
             }
-          }
+          },
+          "description": "The buyer's preferred minimums for a counterparty. A ZH level is a preference, not a payment decision (PROTOCOL §7)."
         }
       }
     },
@@ -246,6 +280,15 @@
             "number",
             "string"
           ]
+        },
+        "source": {
+          "enum": [
+            "self",
+            "attestation",
+            "processor"
+          ],
+          "default": "self",
+          "description": "Where the fact comes from. self = anything the company computes or records, including its own score; attestation = a verified attestation from an independent validator; processor = figures from a payment processor or custodian."
         }
       }
     }

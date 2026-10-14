@@ -1,7 +1,7 @@
 {
   "name": "@zhc/core",
-  "version": "0.2.0",
-  "description": "Reference implementation of the ZHC Protocol v0.2: maturity model, scoring, mandates, evidence, attestations.",
+  "version": "0.2.1",
+  "description": "Reference implementation of the ZHC Protocol v0.2.1: maturity model, scoring, mandates, evidence, attestations.",
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
@@ -12,7 +12,8 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test test/*.test.ts && node scripts/build-examples.ts --check",
+    "examples": "node scripts/build-examples.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

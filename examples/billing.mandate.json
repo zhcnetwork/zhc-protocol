@@ -8,12 +8,18 @@
   "scopes": [
     {
       "action": "money.refund",
-      "limits": { "per_action": { "amount": 150000, "currency": "USD" }, "per_day": { "amount": 300000, "currency": "USD" } },
+      "limits": {
+        "per_action": { "amount": 150000, "currency": "USD" },
+        "per_day": { "amount": 300000, "currency": "USD" }
+      },
       "require_approval_over": { "amount": 5000, "currency": "USD" }
     },
     {
       "action": "money.vendor_payment",
-      "limits": { "per_action": { "amount": 20000, "currency": "USD" }, "per_month": { "amount": 100000, "currency": "USD" } }
+      "limits": {
+        "per_action": { "amount": 20000, "currency": "USD" },
+        "per_month": { "amount": 100000, "currency": "USD" }
+      }
     },
     {
       "action": "network.buy",
@@ -25,13 +31,21 @@
   "escalation": { "to": "human:accountable", "timeout_s": 86400, "on_timeout": "deny" },
   "progression": [
     {
-      "when": { "metric": "integrity", "op": ">=", "value": "A" },
-      "then": { "action": "money.refund", "set": { "require_approval_over": { "amount": 50000, "currency": "USD" } } },
-      "note": "Refunds up to $500 no longer need approval once integrity is A."
+      "when": { "metric": "integrity", "op": ">=", "value": "A", "source": "attestation" },
+      "then": {
+        "action": "money.refund",
+        "set": { "require_approval_over": { "amount": 50000, "currency": "USD" } }
+      },
+      "note": "Refunds up to $500 stop needing approval once a current attestation from an independent validator shows integrity A. A rule based on our own score could only narrow this."
     }
   ],
   "bindings": {
     "mpp": { "session_limit": { "amount": 100000, "currency": "USD" } },
     "x402": { "max_amount": { "amount": 20000, "currency": "USD" } }
+  },
+  "signature": {
+    "alg": "Ed25519",
+    "kid": "accountable-2026-10",
+    "sig": "ryq46oodTn286eavSXdkL1EsF-1CiM__XNWZ8rXLOHKE9jm3D2oWIxvC1UxQravrwOfl0aK9kexeccCSm-KtAg"
   }
 }

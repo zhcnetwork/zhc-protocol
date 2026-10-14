@@ -1,6 +1,12 @@
-// Mandates: signed, machine-readable business authority for an agent.
-// Pure evaluation logic; signing lives in attestation.ts helpers.
-import type { DecisionTier, IntegrityGrade, Money, Assurance, ZHLevel } from "./types.ts";
+// Mandates: signed, machine-readable business authority for an agent (PROTOCOL §3).
+// Pure evaluation logic, browser-safe. Signing lives in signing.ts (node) and crypto-web.ts (web).
+//
+// v0.2.1 rules this file enforces:
+// - evaluation fails closed: a request that lacks a field some constraint needs is denied;
+// - the most specific scope wins, and an area-limited action must name its area;
+// - delegated authority is checked link by link, and limits are shared across the chain;
+// - progression rules may widen authority only from facts the company doesn't author.
+import type { Assurance, DecisionTier, IntegrityGrade, Money, ZHLevel } from "./types.ts";
 
 export type MandateAction =
   | "money.spend"
@@ -16,7 +22,19 @@ export type MandateAction =
   | "process.change"
   | "attestation.issue";
 
+/** Actions that always move money, and so always need an amount. */
+export const MONEY_ACTIONS: readonly MandateAction[] = [
+  "money.spend",
+  "money.collect",
+  "money.refund",
+  "money.vendor_payment",
+  "money.reserve",
+  "network.buy",
+  "network.sell",
+];
+
 export interface CounterpartyRequirement {
+  /** A preference, not a safety gate: a ZH level describes autonomy, not fitness to be paid (PROTOCOL §7). */
   min_level?: ZHLevel;
   min_integrity?: Exclude<IntegrityGrade, "U">;
   min_assurance?: Assurance;
@@ -39,28 +57,50 @@ export interface MandateScope {
   counterparty?: CounterpartyRequirement;
 }
 
+/**
+ * Where a progression fact comes from.
+ * - `self`: anything the company computes or records itself, including its own ZH score.
+ * - `attestation`: a current, verified attestation by an independent validator (attestation.ts).
+ * - `processor`: figures from a payment processor or custodian, e.g. settled volume.
+ * Self-sourced rules may only narrow authority (PROTOCOL §3.3).
+ */
+export type ProgressionSource = "self" | "attestation" | "processor";
+
 export interface ProgressionCondition {
-  /** Metric name from a ScoreReport (`metrics`), or `integrity` / `level`. */
+  /** Metric name, or `integrity` / `level`. */
   metric: string;
   op: ">=" | "<=" | "==";
   value: number | string;
+  /** Defaults to "self". */
+  source?: ProgressionSource;
 }
 
 export interface ProgressionRule {
   /** One condition, or several that must all hold. */
   when: ProgressionCondition | ProgressionCondition[];
-  /** Which scope to widen (by action, and domain if given) and the new values. */
+  /** Which scope to change (by action, and domain if given) and the new values. */
   then: { action: MandateAction; domain?: string; set: Partial<MandateScope> };
   note?: string;
+}
+
+export interface MandateSignature {
+  alg: "Ed25519";
+  /** Key id; verifiers resolve it from the issuer's manifest or DID document. */
+  kid: string;
+  /** base64url signature over the canonical JSON of the mandate without `signature`. */
+  sig: string;
 }
 
 export interface Mandate {
   zhc: "0.2";
   id: string;
-  /** Who grants authority: the accountable human, or a parent agent (delegation). */
+  /** Who grants authority: the accountable human, or the subject of the parent mandate (delegation). */
   issuer: string;
   subject: string;
+  /** Delegation parent: the mandate whose subject issued this one. */
   parent?: string;
+  /** Earlier version of the same grant that this one replaces (not a delegation link). */
+  supersedes?: string;
   issued_at: string;
   expires_at: string;
   revoked?: boolean;
@@ -73,6 +113,7 @@ export interface Mandate {
     x402?: { max_amount: Money };
     ap2?: { intent_mandate: string };
   };
+  signature?: MandateSignature;
 }
 
 export interface ActionRequest {
@@ -85,7 +126,7 @@ export interface ActionRequest {
   at: string;
 }
 
-/** Spend already used under this mandate, per currency, for limit checks. */
+/** Spend already used under a mandate, per currency, for limit checks. */
 export interface UsageLedger {
   day: Record<string, number>;
   month: Record<string, number>;
@@ -94,8 +135,9 @@ export interface UsageLedger {
 /**
  * Why an action was denied. `counterparty` denials mean the other party failed the buyer's
  * requirements; they are screening outcomes, not conduct by the agent (PROTOCOL §3.1).
+ * `invalid` means the request or mandate was malformed and nothing could be checked safely.
  */
-export type DenyCode = "revoked" | "validity" | "scope" | "charter" | "change" | "counterparty" | "limit";
+export type DenyCode = "invalid" | "revoked" | "validity" | "scope" | "charter" | "change" | "counterparty" | "limit";
 
 export type Verdict =
   | { decision: "allow"; scope: MandateScope }
@@ -105,23 +147,103 @@ export type Verdict =
 const TIERS: DecisionTier[] = ["tactical", "operational", "strategic", "charter"];
 const GRADES: IntegrityGrade[] = ["A", "B", "C", "D", "U"];
 const ASSURANCE: Assurance[] = ["claimed", "provisional", "measured", "attested"];
+const CURRENCY_RE = /^[A-Z0-9]{3,5}$/;
+const EMPTY_USAGE: UsageLedger = { day: {}, month: {} };
 
-function over(m: Money | undefined, limit: Money | undefined): boolean {
-  if (!m || !limit) return false;
+const validTime = (s: unknown): s is string => typeof s === "string" && Number.isFinite(Date.parse(s));
+
+/** A money value is a non-negative safe integer in minor units with a currency code. */
+export function isValidMoney(m: unknown): m is Money {
+  if (!m || typeof m !== "object") return false;
+  const { amount, currency } = m as Money;
+  return Number.isSafeInteger(amount) && amount >= 0 && typeof currency === "string" && CURRENCY_RE.test(currency);
+}
+
+/** Structural problems that make a mandate unusable. An empty list means it can be evaluated. */
+export function validateMandate(m: Mandate): string[] {
+  const problems: string[] = [];
+  if (!validTime(m.issued_at)) problems.push("issued_at is not a valid time");
+  if (!validTime(m.expires_at)) problems.push("expires_at is not a valid time");
+  if (validTime(m.issued_at) && validTime(m.expires_at) && Date.parse(m.issued_at) >= Date.parse(m.expires_at)) {
+    problems.push("expires_at must be after issued_at");
+  }
+  if (!Array.isArray(m.scopes) || m.scopes.length === 0) problems.push("a mandate needs at least one scope");
+  const keys = new Set<string>();
+  for (const s of m.scopes ?? []) {
+    const key = `${s.action}|${s.domain ?? "*"}`;
+    if (keys.has(key)) problems.push(`two scopes for ${s.action}${s.domain ? ` in ${s.domain}` : ""}`);
+    keys.add(key);
+    for (const k of ["per_action", "per_day", "per_month"] as const) {
+      const l = s.limits?.[k];
+      if (l !== undefined && !isValidMoney(l)) problems.push(`${s.action}.${k} is not a valid amount`);
+    }
+    if (s.require_approval_over !== undefined && !isValidMoney(s.require_approval_over)) problems.push(`${s.action}.require_approval_over is not a valid amount`);
+    if (s.max_relative_change !== undefined && !(Number.isFinite(s.max_relative_change) && s.max_relative_change >= 0)) {
+      problems.push(`${s.action}.max_relative_change must be a non-negative number`);
+    }
+  }
+  return problems;
+}
+
+function over(m: Money, limit: Money): boolean {
   if (m.currency !== limit.currency) return true; // a limit in another currency never authorizes
   return m.amount > limit.amount;
 }
 
-export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedger = { day: {}, month: {} }): Verdict {
+/**
+ * Most-specific matching scope. A scope for the request's area beats an area-less one. If the
+ * action is limited by area anywhere in the mandate, the request must name its area.
+ */
+export function selectScope(m: Mandate, req: ActionRequest): { scope: MandateScope } | { code: DenyCode; reason: string } {
+  const candidates = m.scopes.filter((s) => s.action === req.action);
+  if (!candidates.length) return { code: "scope", reason: `no scope grants ${req.action}` };
+  if (req.domain === undefined) {
+    if (candidates.some((s) => s.domain !== undefined)) {
+      return { code: "invalid", reason: `${req.action} is limited by area in this mandate; the request must name its area` };
+    }
+    return { scope: candidates[0] };
+  }
+  const exact = candidates.find((s) => s.domain === req.domain);
+  if (exact) return { scope: exact };
+  const general = candidates.find((s) => s.domain === undefined);
+  if (general) return { scope: general };
+  return { code: "scope", reason: `no scope grants ${req.action} in ${req.domain}` };
+}
+
+export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedger = EMPTY_USAGE): Verdict {
   const deny = (code: DenyCode, reason: string): Verdict => ({ decision: "deny", code, reason });
+
+  // 0. Well-formedness: nothing malformed reaches a limit check.
+  const problems = validateMandate(mandate);
+  if (problems.length) return deny("invalid", `mandate ${mandate.id} is malformed: ${problems.join("; ")}`);
+  if (!req || typeof req.action !== "string") return deny("invalid", "request has no action");
+  if (!validTime(req.at)) return deny("invalid", "request time is missing or not a valid time");
+  if (req.amount !== undefined && !isValidMoney(req.amount)) {
+    return deny("invalid", "amount must be a non-negative integer in minor units with a currency code");
+  }
+  if (MONEY_ACTIONS.includes(req.action) && req.amount === undefined) return deny("invalid", `${req.action} needs an amount`);
+  if (req.action === "decision.make" && req.tier === undefined) return deny("invalid", "decision.make needs a decision tier");
+  if (req.action === "pricing.change" && req.relative_change === undefined) return deny("invalid", "pricing.change needs the relative change");
+  if (req.tier !== undefined && !TIERS.includes(req.tier)) return deny("invalid", `unknown decision tier ${String(req.tier)}`);
+  if (req.relative_change !== undefined && !Number.isFinite(req.relative_change)) return deny("invalid", "relative change must be a finite number");
+
   if (mandate.revoked) return deny("revoked", "mandate revoked");
   const at = Date.parse(req.at);
   if (at < Date.parse(mandate.issued_at) || at > Date.parse(mandate.expires_at)) {
     return deny("validity", "outside mandate validity window");
   }
-  const scope = mandate.scopes.find((s) => s.action === req.action && (!s.domain || s.domain === req.domain));
-  if (!scope) return deny("scope", `no scope grants ${req.action}${req.domain ? ` in ${req.domain}` : ""}`);
+  const picked = selectScope(mandate, req);
+  if (!("scope" in picked)) return deny(picked.code, picked.reason);
+  const scope = picked.scope;
   if (req.tier === "charter") return deny("charter", "charter-tier decisions are reserved to the accountable human");
+
+  // Every constraint in the scope must be checkable from the request.
+  const hasMoneyConstraint = scope.limits?.per_action || scope.limits?.per_day || scope.limits?.per_month || scope.require_approval_over;
+  if (hasMoneyConstraint && req.amount === undefined) return deny("invalid", `${req.action} is limited by amount here; the request must include one`);
+  if (scope.tier_max && req.tier === undefined) return deny("invalid", `${req.action} is limited by decision tier here; the request must include one`);
+  if (scope.max_relative_change !== undefined && req.relative_change === undefined) {
+    return deny("invalid", `${req.action} is limited by relative change here; the request must include it`);
+  }
 
   // 1. Hard limits first: no human approval can override these.
   if (scope.max_relative_change !== undefined && req.relative_change !== undefined && Math.abs(req.relative_change) > scope.max_relative_change) {
@@ -146,60 +268,194 @@ export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedge
     const monthUsed = (usage.month[amt.currency] ?? 0) + amt.amount;
     if (l.per_day && (l.per_day.currency !== amt.currency || dayUsed > l.per_day.amount)) return deny("limit", "daily limit reached");
     if (l.per_month && (l.per_month.currency !== amt.currency || monthUsed > l.per_month.amount)) return deny("limit", "monthly limit reached");
-    if (over(amt, l.per_action)) return deny("limit", "per-action limit exceeded");
+    if (l.per_action && over(amt, l.per_action)) return deny("limit", "per-action limit exceeded");
   }
 
   // 2. Approval bands: the action is permissible, but not by the agent alone.
   if (req.tier && scope.tier_max && TIERS.indexOf(req.tier) > TIERS.indexOf(scope.tier_max)) {
     return { decision: "require_approval", scope, reason: `${req.tier} decision exceeds tier_max ${scope.tier_max}`, escalate_to: mandate.escalation.to };
   }
-  if (amt && over(amt, scope.require_approval_over)) {
-    return { decision: "require_approval", scope, reason: `amount over ${scope.require_approval_over!.amount} ${scope.require_approval_over!.currency}`, escalate_to: mandate.escalation.to };
+  if (amt && scope.require_approval_over && over(amt, scope.require_approval_over)) {
+    return {
+      decision: "require_approval",
+      scope,
+      reason: `amount over ${scope.require_approval_over.amount} ${scope.require_approval_over.currency}`,
+      escalate_to: mandate.escalation.to,
+    };
   }
   return { decision: "allow", scope };
 }
 
-const RANK = <T,>(order: readonly T[], x: T | undefined) => (x === undefined ? -1 : order.indexOf(x));
+/**
+ * Evaluate an action under a delegated mandate and every ancestor. `chain[0]` is the subject's
+ * mandate; each next element is its delegation parent. Any deny denies; any approval band requires
+ * approval. `usageOf` must return usage shared by everything that spends under that mandate,
+ * including its descendants (see ExposureBook).
+ */
+export function evaluateChain(chain: Mandate[], req: ActionRequest, usageOf: (mandateId: string) => UsageLedger = () => EMPTY_USAGE): Verdict {
+  if (!chain.length) return { decision: "deny", code: "invalid", reason: "no mandate" };
+  for (let i = 0; i + 1 < chain.length; i++) {
+    const link = isAttenuationOf(chain[i], chain[i + 1]);
+    if (!link.ok) return { decision: "deny", code: "invalid", reason: `delegation chain broken at ${chain[i].id}: ${link.problems.join("; ")}` };
+  }
+  let approval: Verdict | undefined;
+  let leaf: Verdict | undefined;
+  for (const m of chain) {
+    const v = evaluate(m, req, usageOf(m.id));
+    if (v.decision === "deny") return { ...v, reason: m === chain[0] ? v.reason : `${m.id}: ${v.reason}` };
+    if (v.decision === "require_approval" && !approval) approval = v;
+    if (!leaf) leaf = v;
+  }
+  return approval ?? leaf!;
+}
 
-/** A delegated mandate may only narrow its parent: same or fewer actions, same or lower limits, same or stricter checks. */
+export interface Reservation {
+  id: string;
+  /** Every mandate in the chain the amount counts against. */
+  mandates: string[];
+  amount: Money;
+  at: string;
+  state: "held" | "committed" | "released";
+}
+
+/**
+ * Exposure accounting shared across a delegation chain. Reserve before acting, commit once the
+ * effect is confirmed, release if it didn't happen. A parent's daily cap therefore bounds the sum of
+ * everything spent under it and its descendants.
+ */
+export class ExposureBook {
+  #res = new Map<string, Reservation>();
+
+  constructor(reservations: Reservation[] = []) {
+    for (const r of reservations) this.#res.set(r.id, { ...r });
+  }
+
+  usage(mandateId: string, at: string): UsageLedger {
+    const iso = new Date(at).toISOString();
+    const day = iso.slice(0, 10);
+    const month = iso.slice(0, 7);
+    const out: UsageLedger = { day: {}, month: {} };
+    for (const r of this.#res.values()) {
+      if (r.state === "released" || !r.mandates.includes(mandateId)) continue;
+      const rIso = new Date(r.at).toISOString();
+      if (rIso.slice(0, 7) === month) out.month[r.amount.currency] = (out.month[r.amount.currency] ?? 0) + r.amount.amount;
+      if (rIso.slice(0, 10) === day) out.day[r.amount.currency] = (out.day[r.amount.currency] ?? 0) + r.amount.amount;
+    }
+    return out;
+  }
+
+  /**
+   * Evaluate and, if permitted, hold the amount against every mandate in the chain. Pass
+   * `approved: true` only when a human approved this exact action; it satisfies an approval band but
+   * never a hard limit, and the action is re-evaluated against current mandates and usage now.
+   */
+  reserve(chain: Mandate[], req: ActionRequest, opts: { id: string; approved?: boolean }): { verdict: Verdict; held: boolean } {
+    if (this.#res.has(opts.id)) throw new Error(`reservation ${opts.id} already exists`);
+    const verdict = evaluateChain(chain, req, (id) => (validTime(req.at) ? this.usage(id, req.at) : EMPTY_USAGE));
+    const permitted = verdict.decision === "allow" || (verdict.decision === "require_approval" && opts.approved === true);
+    if (!permitted) return { verdict, held: false };
+    if (req.amount) {
+      this.#res.set(opts.id, { id: opts.id, mandates: chain.map((m) => m.id), amount: { ...req.amount }, at: req.at, state: "held" });
+    }
+    return { verdict, held: true };
+  }
+
+  commit(id: string): void {
+    const r = this.#res.get(id);
+    if (r && r.state === "held") r.state = "committed";
+  }
+
+  release(id: string): void {
+    const r = this.#res.get(id);
+    if (r && r.state === "held") r.state = "released";
+  }
+
+  list(): Reservation[] {
+    return [...this.#res.values()].map((r) => ({ ...r }));
+  }
+}
+
+/** Ways `cs` would grant more than `ps` for one scope. Empty means it is no wider. */
+export function scopeWideningProblems(cs: MandateScope, ps: MandateScope): string[] {
+  const problems: string[] = [];
+  const name = `${cs.action}${cs.domain ? `(${cs.domain})` : ""}`;
+  for (const k of ["per_action", "per_day", "per_month"] as const) {
+    const pl = ps.limits?.[k];
+    const cl = cs.limits?.[k];
+    if (pl && (!cl || over(cl, pl))) problems.push(`${name}.${k} exceeds parent`);
+  }
+  if (ps.require_approval_over) {
+    // The effective approval threshold: its own band, else its hard cap (nothing above it is allowed anyway).
+    const eff = cs.require_approval_over ?? cs.limits?.per_action;
+    if (!eff || over(eff, ps.require_approval_over)) problems.push(`${name}.require_approval_over exceeds parent`);
+  }
+  if (ps.tier_max && (!cs.tier_max || TIERS.indexOf(cs.tier_max) > TIERS.indexOf(ps.tier_max))) problems.push(`${name}.tier_max exceeds parent`);
+  if (ps.max_relative_change !== undefined && (cs.max_relative_change === undefined || cs.max_relative_change > ps.max_relative_change)) {
+    problems.push(`${name}.max_relative_change exceeds parent`);
+  }
+  const pc = ps.counterparty;
+  if (pc) {
+    const cc = cs.counterparty ?? {};
+    if (pc.min_level !== undefined && (cc.min_level === undefined || cc.min_level < pc.min_level)) problems.push(`${name}.counterparty.min_level weaker than parent`);
+    if (pc.min_integrity && (!cc.min_integrity || GRADES.indexOf(cc.min_integrity) > GRADES.indexOf(pc.min_integrity))) {
+      problems.push(`${name}.counterparty.min_integrity weaker than parent`);
+    }
+    if (pc.min_assurance && (cc.min_assurance === undefined || ASSURANCE.indexOf(cc.min_assurance) < ASSURANCE.indexOf(pc.min_assurance))) {
+      problems.push(`${name}.counterparty.min_assurance weaker than parent`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * A delegated mandate may only narrow its parent, and must really come from it: issued by the
+ * parent's subject, pointing at the parent, starting no earlier and ending no later.
+ */
 export function isAttenuationOf(child: Mandate, parent: Mandate): { ok: boolean; problems: string[] } {
   const problems: string[] = [];
   if (parent.revoked) problems.push("parent is revoked");
-  if (Date.parse(child.expires_at) > Date.parse(parent.expires_at)) problems.push("child outlives parent");
+  if (child.parent !== parent.id) problems.push(`child.parent is ${child.parent ?? "missing"}, not ${parent.id}`);
+  if (child.issuer !== parent.subject) problems.push(`issued by ${child.issuer}, but only ${parent.subject} may delegate this authority`);
+  for (const [label, m] of [["child", child], ["parent", parent]] as const) {
+    if (!validTime(m.issued_at) || !validTime(m.expires_at)) problems.push(`${label} has an invalid validity window`);
+  }
+  if (validTime(child.issued_at) && validTime(parent.issued_at) && Date.parse(child.issued_at) < Date.parse(parent.issued_at)) {
+    problems.push("child starts before parent");
+  }
+  if (validTime(child.expires_at) && validTime(parent.expires_at) && Date.parse(child.expires_at) > Date.parse(parent.expires_at)) {
+    problems.push("child outlives parent");
+  }
   for (const cs of child.scopes) {
     const ps = parent.scopes.find((p) => p.action === cs.action && (!p.domain || p.domain === cs.domain));
     if (!ps) {
       problems.push(`parent does not grant ${cs.action}`);
       continue;
     }
-    for (const k of ["per_action", "per_day", "per_month"] as const) {
-      const pl = ps.limits?.[k];
-      const cl = cs.limits?.[k];
-      if (pl && (!cl || over(cl, pl))) problems.push(`${cs.action}.${k} exceeds parent`);
-    }
-    if (ps.require_approval_over) {
-      // The child's effective approval threshold: its own band, else its hard cap (nothing above it is allowed anyway).
-      const eff = cs.require_approval_over ?? cs.limits?.per_action;
-      if (!eff || over(eff, ps.require_approval_over)) problems.push(`${cs.action}.require_approval_over exceeds parent`);
-    }
-    if (ps.tier_max && (!cs.tier_max || TIERS.indexOf(cs.tier_max) > TIERS.indexOf(ps.tier_max))) problems.push(`${cs.action}.tier_max exceeds parent`);
-    if (ps.max_relative_change !== undefined && (cs.max_relative_change === undefined || cs.max_relative_change > ps.max_relative_change)) {
-      problems.push(`${cs.action}.max_relative_change exceeds parent`);
-    }
-    const pc = ps.counterparty;
-    if (pc) {
-      const cc = cs.counterparty ?? {};
-      if (pc.min_level !== undefined && (cc.min_level === undefined || cc.min_level < pc.min_level)) problems.push(`${cs.action}.counterparty.min_level weaker than parent`);
-      // Grades: lower index is stricter.
-      if (pc.min_integrity && (!cc.min_integrity || GRADES.indexOf(cc.min_integrity) > GRADES.indexOf(pc.min_integrity))) problems.push(`${cs.action}.counterparty.min_integrity weaker than parent`);
-      if (pc.min_assurance && RANK(ASSURANCE, cc.min_assurance) < RANK(ASSURANCE, pc.min_assurance)) problems.push(`${cs.action}.counterparty.min_assurance weaker than parent`);
-    }
+    problems.push(...scopeWideningProblems(cs, ps));
   }
   return { ok: problems.length === 0, problems };
 }
 
-function holds(cond: ProgressionCondition, facts: Record<string, number | string | null>): boolean {
-  const v = facts[cond.metric];
+/** Facts from a verified, independent attestation. Produce with `attestedFacts()` in attestation.ts. */
+export interface AttestedFacts {
+  kind: "verified-attestation";
+  issuer: string;
+  subject: string;
+  expires_at: string;
+  values: Record<string, number | string | null>;
+}
+
+export interface ProgressionFacts {
+  /** Anything the company computed itself, including its own score. Can only narrow. */
+  self?: Record<string, number | string | null>;
+  attestation?: AttestedFacts;
+  /** Figures from the payment processor or custodian. */
+  processor?: Record<string, number | null>;
+}
+
+function holds(cond: ProgressionCondition, bag: Record<string, number | string | null> | undefined): boolean {
+  if (!bag) return false;
+  const v = bag[cond.metric];
   if (v === null || v === undefined) return false;
   const { op, value } = cond;
   if (cond.metric === "integrity" && typeof v === "string" && typeof value === "string") {
@@ -212,25 +468,39 @@ function holds(cond: ProgressionCondition, facts: Record<string, number | string
   return op === ">=" ? Number(v) >= Number(value) : op === "<=" ? Number(v) <= Number(value) : v === value;
 }
 
+function bagFor(source: ProgressionSource, facts: ProgressionFacts): Record<string, number | string | null> | undefined {
+  if (source === "attestation") return facts.attestation?.kind === "verified-attestation" ? facts.attestation.values : undefined;
+  if (source === "processor") return facts.processor;
+  return facts.self;
+}
+
 /**
- * Progressive autonomy: widen scopes whose progression rule is satisfied by the latest score.
- * Returns a new mandate (the issuer re-signs it) and the rules that fired.
+ * Apply progression rules to a mandate. Returns the candidate mandate (the issuer re-signs it),
+ * the rules that fired, and the rules that matched but were refused because they would widen
+ * authority from self-sourced facts. A refused widening is a proposal for the issuer to sign, never
+ * a change in authority.
  */
 export function applyProgression(
   mandate: Mandate,
-  facts: Record<string, number | string | null>,
-): { mandate: Mandate; fired: ProgressionRule[] } {
+  facts: ProgressionFacts,
+): { mandate: Mandate; fired: ProgressionRule[]; refused: { rule: ProgressionRule; reason: string; proposed: MandateScope }[] } {
   const fired: ProgressionRule[] = [];
+  const refused: { rule: ProgressionRule; reason: string; proposed: MandateScope }[] = [];
   const scopes = mandate.scopes.map((s) => ({ ...s }));
   for (const rule of mandate.progression ?? []) {
     const conds = Array.isArray(rule.when) ? rule.when : [rule.when];
-    if (!conds.every((c) => holds(c, facts))) continue;
+    if (!conds.length || !conds.every((c) => holds(c, bagFor(c.source ?? "self", facts)))) continue;
     const i = scopes.findIndex((s) => s.action === rule.then.action && (rule.then.domain === undefined || s.domain === rule.then.domain));
     if (i < 0) continue;
     const next: MandateScope = { ...scopes[i], ...rule.then.set };
     if (scopes[i].limits || rule.then.set.limits) next.limits = { ...scopes[i].limits, ...rule.then.set.limits };
+    const selfSourced = conds.some((c) => (c.source ?? "self") === "self");
+    if (selfSourced && scopeWideningProblems(next, scopes[i]).length > 0) {
+      refused.push({ rule, reason: "a rule based on the company's own figures may only narrow authority; the issuer must sign any widening", proposed: next });
+      continue;
+    }
     scopes[i] = next;
     fired.push(rule);
   }
-  return { mandate: { ...mandate, scopes }, fired };
+  return { mandate: { ...mandate, scopes }, fired, refused };
 }

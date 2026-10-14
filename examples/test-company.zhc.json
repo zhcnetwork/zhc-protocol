@@ -1,0 +1,20 @@
+{
+  "zhc": "0.2",
+  "id": "did:web:test.zhc.network",
+  "name": "Test Co",
+  "legal": { "entity_name": "Test Co LLC", "jurisdiction": "US-WY" },
+  "accountable_human": { "name": "A. Human", "contact": "human@example.com" },
+  "charter": { "mission": "Test", "reserved_to_human": ["charter changes"], "prohibited": [] },
+  "domains": ["support", "delivery"],
+  "scope": { "products": 1 },
+  "agents": [{ "id": "agent-1", "role": "operator", "domain": "support" }],
+  "services": [
+    {
+      "id": "svc",
+      "description": "x",
+      "endpoint": "https://example.com",
+      "protocol": "http",
+      "price": { "amount": 4900, "currency": "USD" }
+    }
+  ]
+}

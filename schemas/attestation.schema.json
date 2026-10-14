@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://zhc.network/schemas/0.2/attestation.schema.json",
+  "$comment": "Wire version 0.2, specification revision 0.2.1. Revisions add optional fields only.",
   "title": "ZH Attestation v0.2",
-  "description": "A validator-signed ZH profile over a specific evidence head. Ed25519 over canonical JSON of payload.",
+  "description": "A validator-signed ZH profile over a specific evidence head. Ed25519 over the canonical JSON of the payload. Verify only with a key resolved from the issuer's manifest or DID document (PROTOCOL §6.2).",
   "type": "object",
   "required": [
     "payload",
-    "signature",
-    "public_key"
+    "signature"
   ],
   "properties": {
     "payload": {
@@ -36,6 +36,10 @@
         "issuer": {
           "type": "string"
         },
+        "kid": {
+          "type": "string",
+          "description": "Key id the issuer signed with; resolve it from the issuer's validator_keys."
+        },
         "subject": {
           "type": "string"
         },
@@ -53,6 +57,10 @@
           "properties": {
             "spec": {
               "const": "0.2"
+            },
+            "method": {
+              "type": "string",
+              "description": "Scoring method, e.g. zhc-score/0.2.1."
             },
             "company": {
               "type": "string"
@@ -104,6 +112,9 @@
               "minimum": 0,
               "maximum": 5
             },
+            "scope_basis": {
+              "const": "declared"
+            },
             "integrity": {
               "enum": [
                 "A",
@@ -140,6 +151,7 @@
             },
             "limited_by": {
               "type": "array",
+              "description": "Axes holding the composite below the next level. Since revision 0.2.1 only O, D, F and R gate; N appears only in v0.2.0 profiles.",
               "items": {
                 "enum": [
                   "O",
@@ -162,7 +174,8 @@
           ],
           "properties": {
             "head": {
-              "type": "string"
+              "type": "string",
+              "description": "Evidence head (hash of the last event in the window)."
             },
             "events": {
               "type": "integer"
@@ -172,6 +185,31 @@
             },
             "to": {
               "type": "string"
+            }
+          }
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the canonical JSON of the manifest the profile was computed against."
+        },
+        "independence": {
+          "type": "object",
+          "description": "The validator's relationship to the subject (PROTOCOL §6.1). Both flags must be false for a valid attestation.",
+          "required": [
+            "common_control",
+            "fee_depends_on_outcome"
+          ],
+          "properties": {
+            "common_control": {
+              "const": false
+            },
+            "fee_depends_on_outcome": {
+              "const": false
+            },
+            "note": {
+              "type": "string",
+              "description": "Anything else a relying party should know, including who pays for the attestation."
             }
           }
         },
@@ -186,10 +224,13 @@
       }
     },
     "signature": {
-      "type": "string"
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "base64url Ed25519 signature over the canonical JSON of payload."
     },
     "public_key": {
-      "type": "string"
+      "type": "string",
+      "description": "Convenience copy of the issuer key. Never used to verify."
     }
   }
 }

@@ -1,8 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://zhc.network/schemas/0.2/event.schema.json",
+  "$comment": "Wire version 0.2, specification revision 0.2.1. Revisions add optional fields only.",
   "title": "ZHC Evidence Event v0.2",
-  "description": "One line of a hash-chained evidence log (JSON Lines).",
+  "description": "One line of a hash-chained evidence log (JSON Lines). `company` must be the manifest id; `hash` is the SHA-256 of the canonical JSON of the event without `hash` (PROTOCOL §4.2).",
   "type": "object",
   "required": [
     "v",
@@ -48,6 +49,7 @@
         "decision.made",
         "money.moved",
         "human.intervention",
+        "incident.opened",
         "incident.resolved",
         "process.changed",
         "network.transaction",
@@ -241,10 +243,43 @@
             "override",
             "kill_switch",
             "routine"
-          ]
+          ],
+          "description": "fix, override and kill_switch are rescues and count against R; routine is a scheduled review."
         },
         "reason": {
           "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "description": "An incident detected and not yet resolved. Open incidents count as not recovered (MODEL §3, R).",
+      "required": [
+        "type",
+        "severity",
+        "detected_by",
+        "detected_before_impact"
+      ],
+      "properties": {
+        "type": {
+          "const": "incident.opened"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "detected_by": {
+          "enum": [
+            "ai",
+            "human"
+          ]
+        },
+        "detected_before_impact": {
+          "type": "boolean"
         }
       }
     },
@@ -261,6 +296,10 @@
       "properties": {
         "type": {
           "const": "incident.resolved"
+        },
+        "incident": {
+          "type": "string",
+          "description": "Id of the incident.opened event this resolves, if one was recorded."
         },
         "severity": {
           "enum": [
@@ -325,6 +364,18 @@
         },
         "retained": {
           "type": "boolean"
+        },
+        "evaluated": {
+          "type": "boolean",
+          "description": "Was the change tested against comparable work before it was kept? Required for O5."
+        },
+        "outcome": {
+          "enum": [
+            "improved",
+            "neutral",
+            "worse"
+          ],
+          "description": "Measured effect on outcomes, or on cost at equal quality. Required for O5."
         },
         "summary": {
           "type": "string"
@@ -505,7 +556,8 @@
         "reason": {
           "type": "string"
         }
-      }
+      },
+      "description": "An action the policy engine stopped. Reported as control effectiveness, never graded."
     },
     {
       "type": "object",
@@ -596,10 +648,13 @@
       "properties": {
         "amount": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Integer minor units (cents for USD)."
         },
         "currency": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[A-Z0-9]{3,5}$"
         }
       }
     }

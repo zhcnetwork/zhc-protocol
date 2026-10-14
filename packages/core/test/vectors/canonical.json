@@ -1,0 +1,65 @@
+[
+  {
+    "name": "key order",
+    "input": {
+      "b": 1,
+      "a": 2,
+      "c": {
+        "z": true,
+        "y": null
+      }
+    },
+    "canonical": "{\"a\":2,\"b\":1,\"c\":{\"y\":null,\"z\":true}}"
+  },
+  {
+    "name": "undefined members are omitted",
+    "input": {
+      "a": 1
+    },
+    "canonical": "{\"a\":1}"
+  },
+  {
+    "name": "unicode and escapes",
+    "input": {
+      "s": "naïve \"quoted\" \\ \n tab\t é 😀",
+      "k": "日本"
+    },
+    "canonical": "{\"k\":\"日本\",\"s\":\"naïve \\\"quoted\\\" \\\\ \\n tab\\t é 😀\"}"
+  },
+  {
+    "name": "numbers",
+    "input": {
+      "i": 42,
+      "n": -7,
+      "f": 0.1,
+      "big": 9007199254740991,
+      "e": 1e+21
+    },
+    "canonical": "{\"big\":9007199254740991,\"e\":1e+21,\"f\":0.1,\"i\":42,\"n\":-7}"
+  },
+  {
+    "name": "arrays keep order",
+    "input": {
+      "list": [
+        3,
+        1,
+        2,
+        {
+          "b": 1,
+          "a": 0
+        }
+      ]
+    },
+    "canonical": "{\"list\":[3,1,2,{\"a\":0,\"b\":1}]}"
+  },
+  {
+    "name": "uppercase sorts before lowercase",
+    "input": {
+      "b": 1,
+      "B": 2,
+      "a": 3,
+      "A": 4
+    },
+    "canonical": "{\"A\":4,\"B\":2,\"a\":3,\"b\":1}"
+  }
+]

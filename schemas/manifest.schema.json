@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://zhc.network/schemas/0.2/manifest.schema.json",
+  "$comment": "Wire version 0.2, specification revision 0.2.1. Revisions add optional fields only.",
   "title": "ZHC Company Manifest v0.2",
   "description": "Published at /.well-known/zhc.json. Declares who the company is, who answers for it, and its agents.",
   "type": "object",
@@ -61,7 +62,8 @@
           "type": "string"
         },
         "contact": {
-          "type": "string"
+          "type": "string",
+          "description": "SHOULD be a role address, not a personal one."
         }
       }
     },
@@ -90,7 +92,8 @@
         },
         "uri": {
           "type": "string",
-          "format": "uri"
+          "format": "uri",
+          "description": "Full charter. SHOULD name a successor, or a procedure, for when the accountable human can't act."
         }
       }
     },
@@ -121,7 +124,8 @@
           "type": "integer",
           "minimum": 0
         }
-      }
+      },
+      "description": "Declared by the company. Not checked against evidence in v0.2.1 (MODEL §6)."
     },
     "agents": {
       "type": "array",
@@ -191,7 +195,8 @@
             }
           }
         }
-      }
+      },
+      "description": "Services offered to others. A priced service makes refund conduct applicable (MODEL §5)."
     },
     "mandates_uri": {
       "type": "string"
@@ -230,7 +235,7 @@
     },
     "validator_keys": {
       "type": "array",
-      "description": "Public keys this company signs attestations with, if it acts as a validator.",
+      "description": "Public keys this company signs attestations with, if it acts as a validator (PROTOCOL §6.2).",
       "items": {
         "type": "object",
         "required": [
@@ -240,6 +245,33 @@
         ],
         "properties": {
           "id": {
+            "type": "string"
+          },
+          "alg": {
+            "const": "Ed25519"
+          },
+          "public_key_pem": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "signing_keys": {
+      "type": "array",
+      "description": "Public keys that sign this company's mandates (PROTOCOL §3.5). `holder` is the issuer id used in mandates, e.g. human:owner, or an agent id that delegates.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "holder",
+          "alg",
+          "public_key_pem"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "holder": {
             "type": "string"
           },
           "alg": {
@@ -262,7 +294,9 @@
       "properties": {
         "amount": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Integer minor units (cents for USD)."
         },
         "currency": {
           "type": "string",

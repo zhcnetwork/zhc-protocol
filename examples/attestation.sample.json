@@ -2,11 +2,13 @@
   "payload": {
     "type": "ZHAttestation",
     "spec": "0.2",
-    "method": "zhc-score/0.2.0",
+    "method": "zhc-score/0.2.1",
     "issuer": "did:web:validator.example",
+    "kid": "validator-2026-09",
     "subject": "did:web:test.zhc.network",
     "profile": {
       "spec": "0.2",
+      "method": "zhc-score/0.2.1",
       "company": "did:web:test.zhc.network",
       "level": 3,
       "axes": {
@@ -17,31 +19,37 @@
         "N": 1
       },
       "scope": 2,
+      "scope_basis": "declared",
       "integrity": "A",
       "assurance": "attested",
       "window": {
-        "from": "2026-05-31T23:00:00.000Z",
-        "to": "2026-08-29T23:00:00.000Z",
+        "from": "2026-06-01T00:00:00.000Z",
+        "to": "2026-08-30T00:00:00.000Z",
         "days": 90,
-        "events": 700
+        "events": 704
       },
       "limited_by": [
         "O",
         "D",
         "F",
-        "R",
-        "N"
+        "R"
       ]
     },
     "evidence": {
-      "head": "54174d8514c0cae95cc757d777acd8643b4758e13959439133967f5805c07bed",
-      "events": 700,
-      "from": "2026-05-31T23:00:00.000Z",
-      "to": "2026-08-29T23:00:00.000Z"
+      "head": "6d6bc9f44074deb552d31c76467d8d356036b12789f58bb24890ca4deaa96666",
+      "events": 704,
+      "from": "2026-06-01T00:00:00.000Z",
+      "to": "2026-08-30T00:00:00.000Z"
+    },
+    "manifest_sha256": "eeca07f710f8d659e9e7c3703e7d6ae8ae2056e3508a94078da4bd84425bb6c5",
+    "independence": {
+      "common_control": false,
+      "fee_depends_on_outcome": false,
+      "note": "Example. The subject paid a flat fee agreed before the assessment."
     },
     "issued_at": "2026-09-01T00:00:00.000Z",
     "expires_at": "2026-11-30T00:00:00.000Z"
   },
-  "signature": "QYvM0IDoUYBH5-gvMnwNg_SufH4PlBjGODIJXEx8nJE3_VCUnjp4rLXtlbDTOQ8pImVzkQPhq8ilptpqaPxvAw",
-  "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAJl96PDjYOmeCo4iipQILRDig9xQ0yGcfPpD1gbiA0hE=\n-----END PUBLIC KEY-----\n"
+  "signature": "TXgEdyhQsC27NxXnOXVWrL18QzCJlt-3sM1EHS4Z-hS6WJdRklH20RIl56JsGq-Ft-t_GIj8E0GSP4s_T8QHBg",
+  "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEADYxaagn4wIlmWVpNPuF99PTabEKuTvu6l0p79VREoNg=\n-----END PUBLIC KEY-----\n"
 }
