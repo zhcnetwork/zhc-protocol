@@ -249,6 +249,20 @@ function isHumanOperatingContact(e: ZHCEvent): boolean {
   }
 }
 
+/**
+ * Hours of [fromMs, toMs] covered by evidence. Each event covers the `horizonMs` after it (or up to
+ * the next event, if sooner), so time the log says nothing about never counts. `times` is sorted.
+ */
+function coveredHours(times: number[], fromMs: number, toMs: number, horizonMs: number): number {
+  let covered = 0;
+  for (let i = 0; i < times.length; i++) {
+    const a = Math.max(times[i], fromMs);
+    const b = Math.min(times[i] + horizonMs, i + 1 < times.length ? times[i + 1] : Infinity, toMs);
+    if (b > a) covered += b - a;
+  }
+  return covered / HOUR_MS;
+}
+
 function scoreR(
   all: ZHCEvent[],
   asOfMs: number,
@@ -257,13 +271,16 @@ function scoreR(
 ): { result: AxisResult; metrics: Record<string, number | null> } {
   const T = THRESHOLDS.R;
   const ts = (e: ZHCEvent) => Date.parse(e.ts);
+  const horizonMs = T.coverage_horizon_hours * HOUR_MS;
+  const times = all.map(ts); // `all` is every event up to asOf, in time order
   // Each level is judged over a lookback at least as long as its claim: R4 (90 days) over 90 days,
-  // R5 (a year) over 365. Exposure starts when the evidence starts, never before.
+  // R5 (a year) over 365. Exposure is the part of the lookback the evidence covers: it starts when
+  // the evidence starts, and a gap or a stale log doesn't count as time without rescues.
   const perLevel = [1, 2, 3, 4, 5].map((lvl) => {
     const lookbackDays = Math.max(windowDays, T.mtbr_hours[lvl] / 24);
     const startMs = Math.max(asOfMs - lookbackDays * DAY_MS, firstEverMs);
     const evs = all.filter((e) => ts(e) >= startMs && ts(e) <= asOfMs);
-    const exposureH = Math.max(0, (asOfMs - startMs) / HOUR_MS);
+    const exposureH = coveredHours(times, startMs, asOfMs, horizonMs);
     const rescues = evs.filter((e) => e.type === "human.intervention" && e.kind !== "routine").length;
     // Conservative estimator: a quiet window of length L supports "≥ L between rescues", no more.
     const mtbrH = exposureH / (rescues + 1);
@@ -315,13 +332,16 @@ function scoreR(
     if (!sessions.length || t - sessions[sessions.length - 1] > T.session_merge_minutes * 60_000) sessions.push(t);
     else sessions[sessions.length - 1] = t;
   }
+  // Stretches are measured up to the end of the evidence, not past it.
+  const lastMs = times.length ? times[times.length - 1] : asOfMs;
+  const evidenceEndMs = Math.min(asOfMs, lastMs + horizonMs);
   let longest = 0;
   let prev = winStart;
   for (const t of sessions) {
     longest = Math.max(longest, t - prev);
     prev = t;
   }
-  const current = asOfMs - prev;
+  const current = Math.max(0, evidenceEndMs - prev);
   longest = Math.max(longest, current);
   const w = at(3); // the window-length view (R1–R4 use the window unless it is shorter than the claim)
   return {
@@ -338,6 +358,8 @@ function scoreR(
       longest_unattended_hours: longest / HOUR_MS,
       current_unattended_hours: current / HOUR_MS,
       exposure_days: w.exposureH / 24,
+      /** Time from the last event to asOf. A large gap means the profile describes the past. */
+      evidence_gap_hours: Math.max(0, asOfMs - lastMs) / HOUR_MS,
     },
   };
 }

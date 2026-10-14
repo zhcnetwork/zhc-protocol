@@ -90,6 +90,7 @@ A money movement is autonomous when it is **authorized by a mandate** (PROTOCOL 
 ### R — Resilience · *How often must a person rescue it, and does it recover on its own?*
 
 - A **rescue** is a `human.intervention` other than a `routine` board review: a fix, an override, a kill switch.
+- **Exposure** is the time the evidence covers. Each event covers at most the 24 hours after it, so a gap in the log, or a log that stopped before `asOf`, never counts as time without rescues.
 - **MTBR** is the mean time between rescues: exposure ÷ (rescues + 1). A quiet stretch of length *L* therefore supports "at least *L* between rescues", and no more.
 - **AI recovery** is the share of incidents in the lookback resolved by AI. **Open incidents** (`incident.opened` with no linked `incident.resolved` by `asOf`) count as not recovered.
 
@@ -109,7 +110,8 @@ A company with no incidents in the lookback hasn't demonstrated recovery, so it 
 How much a person was involved overall is still reported beside the profile, not gating:
 - **human operating contacts:** approvals, overrides, rescues, human-done or per-item-reviewed work;
 - **sessions:** contacts within an hour count as one;
-- the **longest** and **current** stretch with no human contact.
+- the **longest** and **current** stretch with no human contact, measured up to the end of the evidence;
+- the **evidence gap**: time from the last event to `asOf`. A large gap means the profile describes the past.
 
 The "zero-human runtime" statement (§9) is built on these.
 
@@ -211,7 +213,7 @@ A human rescue ends the current qualifying period, even when the rescue was the 
 | Area | v0.2 | v0.2.1 | Why |
 |---|---|---|---|
 | Gating | O, D, F, R, N | O, D, F, R; N reported beside the level | N measured network membership, not autonomy, and was easy to farm between related companies |
-| R | Mean time between interventions, default window only | Mean time between rescues over a lookback as long as the claim; open incidents count | R4 and ZH5 were unreachable; unresolved incidents were invisible |
+| R | Mean time between interventions, default window only | Mean time between rescues over a lookback as long as the claim, counting only time the evidence covers; open incidents count | R4 and ZH5 were unreachable; unresolved incidents were invisible; a stale log looked rescue-free |
 | R names | "Hours/Days/Weeks Unattended", "Anti-Fragile", "Sovereign" | "… Without Rescue" | The names claimed unattended operation, which the formula doesn't measure |
 | Human involvement | Not reported | Contacts, sessions, longest and current unattended stretch | Approvals were invisible in R |
 | O3 | Zero exceptions counted as perfect | At least one exception handled | "Not exercised" isn't "perfect" |

@@ -144,6 +144,11 @@ export const THRESHOLDS = {
     max_recurrence_rate: 0.1,
     /** Human operating contacts within this many minutes count as one session (reported metric). */
     session_merge_minutes: 60,
+    /**
+     * Each event covers at most this many hours after it. Exposure counts only covered time, so a gap
+     * in the log (or a log that stopped) is never counted as time without rescues.
+     */
+    coverage_horizon_hours: 24,
   },
   N: {
     min_contributions: 5,

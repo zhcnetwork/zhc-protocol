@@ -278,3 +278,20 @@ test("the scorer orders events by instant, not by how the timestamp is written",
   assert.deepEqual(b.profile, a.profile);
   assert.deepEqual(b.metrics, a.metrics);
 });
+
+test("R: time the log doesn't cover is never counted as time without rescues", () => {
+  const end = Date.parse("2026-12-31T00:00:00Z");
+  const ev = quietCompany(end - 120 * DAY, 120);
+  const atEnd = score(ev, undefined, { asOf: iso(end) });
+  assert.equal(atEnd.profile.axes.R, 4);
+  // The same log, scored 60 days after it stopped: the silence isn't 60 more rescue-free days.
+  const stale = score(ev, undefined, { asOf: iso(end + 60 * DAY) });
+  assert.ok((stale.metrics.exposure_days ?? 0) < 32, "only the evidence's last month plus one day is covered");
+  assert.ok(stale.profile.axes.R < 4);
+  assert.equal(stale.metrics.evidence_gap_hours, 60 * 24 + 1);
+  // A month missing from the middle of the log doesn't count either.
+  const holed = ev.filter((e) => Date.parse(e.ts) < end - 70 * DAY || Date.parse(e.ts) >= end - 40 * DAY);
+  const h = score(holed, undefined, { asOf: iso(end) });
+  assert.ok((h.metrics.exposure_days ?? 0) < 62, "the 30-day hole adds at most one covered day");
+  assert.ok(h.profile.axes.R < 4);
+});

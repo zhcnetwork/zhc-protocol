@@ -130,6 +130,7 @@
     "longest_unattended_hours": 220,
     "current_unattended_hours": 140,
     "exposure_days": 60,
+    "evidence_gap_hours": 1,
     "zhc_buys": 1,
     "zhc_sells": 0,
     "collaborations": 0,
