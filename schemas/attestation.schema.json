@@ -175,7 +175,7 @@
           "properties": {
             "head": {
               "type": "string",
-              "description": "Evidence head (hash of the last event in the window)."
+              "description": "Evidence head: the hash of the last event of the log the validator verified."
             },
             "events": {
               "type": "integer"

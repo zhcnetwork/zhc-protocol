@@ -34,7 +34,10 @@ export const MONEY_ACTIONS: readonly MandateAction[] = [
 ];
 
 export interface CounterpartyRequirement {
-  /** A preference, not a safety gate: a ZH level describes autonomy, not fitness to be paid (PROTOCOL §7). */
+  /**
+   * The buyer's policy, enforced like any other limit. A ZH level describes how a company runs, not
+   * whether it can deliver or make good on a loss, so it isn't evidence of capacity (PROTOCOL §7).
+   */
   min_level?: ZHLevel;
   min_integrity?: Exclude<IntegrityGrade, "U">;
   min_assurance?: Assurance;
@@ -43,8 +46,8 @@ export interface CounterpartyRequirement {
 export interface MandateScope {
   action: MandateAction;
   domain?: string;
-  /** Highest decision tier this scope may decide alone. */
-  tier_max?: DecisionTier;
+  /** Highest decision tier this scope may decide alone. Charter decisions are never delegable. */
+  tier_max?: Exclude<DecisionTier, "charter">;
   limits?: {
     per_action?: Money;
     per_day?: Money;
@@ -145,6 +148,8 @@ export type Verdict =
   | { decision: "deny"; code: DenyCode; reason: string };
 
 const TIERS: DecisionTier[] = ["tactical", "operational", "strategic", "charter"];
+const OPS: ProgressionCondition["op"][] = [">=", "<=", "=="];
+const SOURCES: ProgressionSource[] = ["self", "attestation", "processor"];
 const GRADES: IntegrityGrade[] = ["A", "B", "C", "D", "U"];
 const ASSURANCE: Assurance[] = ["claimed", "provisional", "measured", "attested"];
 const CURRENCY_RE = /^[A-Z0-9]{3,5}$/;
@@ -168,6 +173,10 @@ export function validateMandate(m: Mandate): string[] {
     problems.push("expires_at must be after issued_at");
   }
   if (!Array.isArray(m.scopes) || m.scopes.length === 0) problems.push("a mandate needs at least one scope");
+  const e = m.escalation;
+  if (!e || typeof e.to !== "string" || !e.to || !Number.isSafeInteger(e.timeout_s) || e.timeout_s < 0 || (e.on_timeout !== "deny" && e.on_timeout !== "allow")) {
+    problems.push("escalation needs an approver, a non-negative whole-second timeout and an on_timeout of deny or allow");
+  }
   const keys = new Set<string>();
   for (const s of m.scopes ?? []) {
     const key = `${s.action}|${s.domain ?? "*"}`;
@@ -181,7 +190,36 @@ export function validateMandate(m: Mandate): string[] {
     if (s.max_relative_change !== undefined && !(Number.isFinite(s.max_relative_change) && s.max_relative_change >= 0)) {
       problems.push(`${s.action}.max_relative_change must be a non-negative number`);
     }
+    if (s.tier_max !== undefined && !(TIERS.includes(s.tier_max) && (s.tier_max as string) !== "charter")) problems.push(`${s.action}.tier_max must be tactical, operational or strategic`);
+    const c = s.counterparty;
+    if (c !== undefined) {
+      if (c.min_level !== undefined && !(Number.isInteger(c.min_level) && c.min_level >= 0 && c.min_level <= 5)) problems.push(`${s.action}.counterparty.min_level must be 0 to 5`);
+      if (c.min_integrity !== undefined && !["A", "B", "C", "D"].includes(c.min_integrity)) problems.push(`${s.action}.counterparty.min_integrity must be A, B, C or D`);
+      if (c.min_assurance !== undefined && !ASSURANCE.includes(c.min_assurance)) problems.push(`${s.action}.counterparty.min_assurance is not an assurance level`);
+    }
   }
+  for (const [i, r] of (m.progression ?? []).entries()) {
+    const conds = Array.isArray(r?.when) ? r.when : [r?.when];
+    if (!conds.length || conds.some((c) => !c || typeof c.metric !== "string" || !OPS.includes(c.op) || (c.source !== undefined && !SOURCES.includes(c.source)))) {
+      problems.push(`progression rule ${i + 1} has a malformed condition`);
+    }
+    if (!r?.then || typeof r.then.action !== "string" || !r.then.set || typeof r.then.set !== "object") problems.push(`progression rule ${i + 1} has no target scope or change`);
+    else if ("action" in r.then.set || "domain" in r.then.set) problems.push(`progression rule ${i + 1} may not change a scope's action or area`);
+  }
+  const b = m.bindings;
+  for (const [label, money] of [["bindings.mpp.session_limit", b?.mpp?.session_limit], ["bindings.x402.max_amount", b?.x402?.max_amount]] as const) {
+    if (money !== undefined && !isValidMoney(money)) problems.push(`${label} is not a valid amount`);
+  }
+  return problems;
+}
+
+/** Problems with the counterparty profile a request carries. Empty means it can be checked. */
+function counterpartyProblems(cp: ActionRequest["counterparty"]): string[] {
+  if (cp === undefined) return [];
+  const problems: string[] = [];
+  if (!(Number.isInteger(cp.level) && cp.level >= 0 && cp.level <= 5)) problems.push("level must be 0 to 5");
+  if (!GRADES.includes(cp.integrity)) problems.push("integrity must be A, B, C, D or U");
+  if (!ASSURANCE.includes(cp.assurance)) problems.push("assurance is not an assurance level");
   return problems;
 }
 
@@ -226,6 +264,8 @@ export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedge
   if (req.action === "pricing.change" && req.relative_change === undefined) return deny("invalid", "pricing.change needs the relative change");
   if (req.tier !== undefined && !TIERS.includes(req.tier)) return deny("invalid", `unknown decision tier ${String(req.tier)}`);
   if (req.relative_change !== undefined && !Number.isFinite(req.relative_change)) return deny("invalid", "relative change must be a finite number");
+  const cpProblems = counterpartyProblems(req.counterparty);
+  if (cpProblems.length) return deny("invalid", `counterparty profile is malformed: ${cpProblems.join("; ")}`);
 
   if (mandate.revoked) return deny("revoked", "mandate revoked");
   const at = Date.parse(req.at);
@@ -294,6 +334,14 @@ export function evaluate(mandate: Mandate, req: ActionRequest, usage: UsageLedge
  */
 export function evaluateChain(chain: Mandate[], req: ActionRequest, usageOf: (mandateId: string) => UsageLedger = () => EMPTY_USAGE): Verdict {
   if (!chain.length) return { decision: "deny", code: "invalid", reason: "no mandate" };
+  // The chain must reach its root: leaving out a parent would skip its revocation and its limits.
+  const root = chain[chain.length - 1];
+  if (root.parent !== undefined) {
+    return { decision: "deny", code: "invalid", reason: `incomplete delegation chain: ${root.id} was delegated from ${root.parent}, which wasn't supplied` };
+  }
+  // A revoked mandate cuts off everything delegated from it.
+  const revoked = chain.find((m) => m.revoked);
+  if (revoked) return { decision: "deny", code: "revoked", reason: revoked === chain[0] ? "mandate revoked" : `${revoked.id} was revoked, and everything delegated from it with it` };
   for (let i = 0; i + 1 < chain.length; i++) {
     const link = isAttenuationOf(chain[i], chain[i + 1]);
     if (!link.ok) return { decision: "deny", code: "invalid", reason: `delegation chain broken at ${chain[i].id}: ${link.problems.join("; ")}` };
@@ -379,6 +427,8 @@ export class ExposureBook {
 export function scopeWideningProblems(cs: MandateScope, ps: MandateScope): string[] {
   const problems: string[] = [];
   const name = `${cs.action}${cs.domain ? `(${cs.domain})` : ""}`;
+  if (cs.action !== ps.action) problems.push(`${name} grants a different action than ${ps.action}`);
+  if (ps.domain !== undefined && cs.domain !== ps.domain) problems.push(`${name} is not limited to ${ps.domain}`);
   for (const k of ["per_action", "per_day", "per_month"] as const) {
     const pl = ps.limits?.[k];
     const cl = cs.limits?.[k];
@@ -426,17 +476,43 @@ export function isAttenuationOf(child: Mandate, parent: Mandate): { ok: boolean;
     problems.push("child outlives parent");
   }
   for (const cs of child.scopes) {
-    const ps = parent.scopes.find((p) => p.action === cs.action && (!p.domain || p.domain === cs.domain));
+    // Compare with the parent scope that would govern the same requests: the most specific one.
+    const ps =
+      (cs.domain !== undefined ? parent.scopes.find((p) => p.action === cs.action && p.domain === cs.domain) : undefined) ??
+      parent.scopes.find((p) => p.action === cs.action && p.domain === undefined);
     if (!ps) {
-      problems.push(`parent does not grant ${cs.action}`);
+      problems.push(`parent does not grant ${cs.action}${cs.domain ? ` in ${cs.domain}` : " in every area"}`);
       continue;
     }
     problems.push(...scopeWideningProblems(cs, ps));
+    // An area-less child scope also applies in every area the parent limits more tightly, unless the
+    // child has its own scope for that area.
+    if (cs.domain === undefined) {
+      for (const pd of parent.scopes.filter((p) => p.action === cs.action && p.domain !== undefined)) {
+        if (child.scopes.some((x) => x.action === cs.action && x.domain === pd.domain)) continue;
+        problems.push(...scopeWideningProblems({ ...cs, domain: pd.domain }, pd));
+      }
+    }
+  }
+  // Approvals go where the parent's go, and a timeout may not be more permissive.
+  const ce = child.escalation;
+  const pe = parent.escalation;
+  if (ce && pe) {
+    if (ce.to !== pe.to) problems.push(`escalation goes to ${ce.to}, not the parent's approver ${pe.to}`);
+    if (ce.on_timeout === "allow" && pe.on_timeout !== "allow") problems.push("escalation allows on timeout where the parent denies");
+    if (ce.on_timeout === "allow" && pe.on_timeout === "allow" && ce.timeout_s < pe.timeout_s) problems.push("escalation allows on timeout sooner than the parent");
+  }
+  // Rail bindings may not exceed the parent's.
+  for (const [label, cm, pm] of [
+    ["bindings.mpp.session_limit", child.bindings?.mpp?.session_limit, parent.bindings?.mpp?.session_limit],
+    ["bindings.x402.max_amount", child.bindings?.x402?.max_amount, parent.bindings?.x402?.max_amount],
+  ] as const) {
+    if (pm && (!cm || over(cm, pm))) problems.push(`${label} exceeds parent`);
   }
   return { ok: problems.length === 0, problems };
 }
 
-/** Facts from a verified, independent attestation. Produce with `attestedFacts()` in attestation.ts. */
+/** Facts from a verified, independent attestation. Produce with `attestedFacts()` in attestation.ts; they lapse at `expires_at`. */
 export interface AttestedFacts {
   kind: "verified-attestation";
   issuer: string;
@@ -468,32 +544,50 @@ function holds(cond: ProgressionCondition, bag: Record<string, number | string |
   return op === ">=" ? Number(v) >= Number(value) : op === "<=" ? Number(v) <= Number(value) : v === value;
 }
 
-function bagFor(source: ProgressionSource, facts: ProgressionFacts): Record<string, number | string | null> | undefined {
-  if (source === "attestation") return facts.attestation?.kind === "verified-attestation" ? facts.attestation.values : undefined;
+function bagFor(source: ProgressionSource, facts: ProgressionFacts, atMs: number): Record<string, number | string | null> | undefined {
+  if (source === "attestation") {
+    const a = facts.attestation;
+    // Only a current attestation counts: an expired one widens nothing.
+    return a?.kind === "verified-attestation" && Date.parse(a.expires_at) > atMs ? a.values : undefined;
+  }
   if (source === "processor") return facts.processor;
   return facts.self;
 }
 
 /**
- * Apply progression rules to a mandate. Returns the candidate mandate (the issuer re-signs it),
- * the rules that fired, and the rules that matched but were refused because they would widen
- * authority from self-sourced facts. A refused widening is a proposal for the issuer to sign, never
- * a change in authority.
+ * Apply progression rules to a mandate at time `at`. Returns the candidate mandate (the issuer
+ * re-signs it), the rules that fired, and the rules that matched but were refused: a widening based
+ * on self-sourced facts (a proposal for the issuer to sign, never a change in authority), or a rule
+ * that would change a scope's action or area, or leave the mandate malformed.
  */
 export function applyProgression(
   mandate: Mandate,
   facts: ProgressionFacts,
+  at: string,
 ): { mandate: Mandate; fired: ProgressionRule[]; refused: { rule: ProgressionRule; reason: string; proposed: MandateScope }[] } {
+  const atMs = Date.parse(at);
+  if (!Number.isFinite(atMs)) throw new Error("applyProgression needs a valid time");
   const fired: ProgressionRule[] = [];
   const refused: { rule: ProgressionRule; reason: string; proposed: MandateScope }[] = [];
   const scopes = mandate.scopes.map((s) => ({ ...s }));
   for (const rule of mandate.progression ?? []) {
     const conds = Array.isArray(rule.when) ? rule.when : [rule.when];
-    if (!conds.length || !conds.every((c) => holds(c, bagFor(c.source ?? "self", facts)))) continue;
-    const i = scopes.findIndex((s) => s.action === rule.then.action && (rule.then.domain === undefined || s.domain === rule.then.domain));
+    if (!conds.length || !conds.every((c) => c && holds(c, bagFor(c.source ?? "self", facts, atMs)))) continue;
+    // A rule names its scope exactly: with no area it targets the area-less scope only.
+    const i = scopes.findIndex((s) => s.action === rule.then.action && s.domain === rule.then.domain);
     if (i < 0) continue;
     const next: MandateScope = { ...scopes[i], ...rule.then.set };
     if (scopes[i].limits || rule.then.set.limits) next.limits = { ...scopes[i].limits, ...rule.then.set.limits };
+    if ("action" in rule.then.set || "domain" in rule.then.set) {
+      refused.push({ rule, reason: "a progression rule may not change a scope's action or area", proposed: next });
+      continue;
+    }
+    const candidate: Mandate = { ...mandate, scopes: scopes.map((s, k) => (k === i ? next : s)) };
+    const problems = validateMandate(candidate);
+    if (problems.length) {
+      refused.push({ rule, reason: `the change would leave the mandate malformed: ${problems.join("; ")}`, proposed: next });
+      continue;
+    }
     const selfSourced = conds.some((c) => (c.source ?? "self") === "self");
     if (selfSourced && scopeWideningProblems(next, scopes[i]).length > 0) {
       refused.push({ rule, reason: "a rule based on the company's own figures may only narrow authority; the issuer must sign any widening", proposed: next });

@@ -26,16 +26,16 @@ export const LEVEL_NAMES: Record<ZHLevel, string> = {
 };
 
 /**
- * What each composite level means, stated no more strongly than its gates. Public copy should use
- * these sentences (or say less), so plain-language claims match the executable test.
+ * What each composite level means, stated no more strongly than its gates (some say less). Public
+ * copy should use these sentences, or say less, so plain-language claims match the executable test.
  */
 export const LEVEL_SUMMARIES: Record<ZHLevel, string> = {
-  0: "People do the work and make the decisions. AI tools may help.",
-  1: "AI carries out some tasks and recommends decisions. People review its work and hold the money.",
-  2: "In at least one area, most work runs without item-by-item review. AI makes routine tactical calls and spends within set budgets. A person rarely has to rescue it.",
-  3: "At least one business area runs end to end without a person touching the work, exceptions included. AI sets prices within limits. People still approve operational decisions.",
-  4: "Every declared area runs untouched, and AI routes work between them. AI handles nearly all operating money and makes operational decisions. It proposes strategy; people approve it.",
-  5: "AI runs the company and its money, and makes every decision except charter matters, within a written charter. A named person holds the charter and the emergency brake, and answers for the company.",
+  0: "Below ZH1 on at least one axis. Usually people do the work, with AI tools helping.",
+  1: "AI does some of the work and recommends decisions. It goes eight hours or more between rescues, on average.",
+  2: "In at least one area, AI does half the work or more without item-by-item review. It makes most routine decisions, spends within budgets, and goes three days or more between rescues, on average.",
+  3: "In at least one area, AI does 90% or more of the work untouched and handles at least half its exceptions. It changes prices within limits. Operational decisions may still need a person.",
+  4: "In every area, AI does 90% or more of the work untouched and routes the handoffs between areas. 90% or more of operating money moves under mandate, AI makes most operational decisions, and it goes three weeks or more between rescues. Strategy may still need a person.",
+  5: "AI makes 95% or more of the decisions at every tier below the charter, moves 98% or more of operating money and every capital allocation under mandate, has kept a tested improvement, and goes 90 days or more between rescues. Charter decisions stay with a named person, who answers for the company.",
 };
 
 export const AXIS_NAMES: Record<Axis, { name: string; question: string }> = {

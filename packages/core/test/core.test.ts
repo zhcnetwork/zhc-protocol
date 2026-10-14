@@ -150,7 +150,7 @@ test("delegated mandates may only narrow their parent", () => {
   const greedy: Mandate = { ...child, scopes: [{ action: "money.refund", limits: { per_action: usd(50000) } }, { action: "money.spend" }] };
   const r = isAttenuationOf(greedy, mandate);
   assert.equal(r.ok, false);
-  assert.ok(r.problems.includes("parent does not grant money.spend"));
+  assert.ok(r.problems.includes("parent does not grant money.spend in every area"));
   assert.ok(r.problems.includes("money.refund.per_action exceeds parent"));
 });
 
@@ -162,12 +162,14 @@ test("progression widens only on a verified independent attestation", () => {
   const att = issueAttestation({ issuer: validator, profile, evidenceHead: "h", now: "2026-09-01T00:00:00Z", privateKey: keys.privateKey });
   const facts = attestedFacts(att, { resolveKey, now: "2026-09-02T00:00:00Z", subject: COMPANY });
   assert.ok(facts, "a verified attestation yields facts");
-  const { mandate: widened, fired, refused } = applyProgression(mandate, { attestation: facts });
+  const { mandate: widened, fired, refused } = applyProgression(mandate, { attestation: facts }, "2026-09-02T00:00:00Z");
   assert.equal(fired.length, 1);
   assert.equal(refused.length, 0);
   assert.equal(evaluate(widened, { action: "money.refund", amount: usd(3000), at }).decision, "allow");
   // The same rule never fires on the company's own figures.
-  assert.equal(applyProgression(mandate, { self: { integrity: "A" } }).fired.length, 0);
+  assert.equal(applyProgression(mandate, { self: { integrity: "A" } }, "2026-09-02T00:00:00Z").fired.length, 0);
+  // An attestation that has expired widens nothing.
+  assert.equal(applyProgression(mandate, { attestation: facts }, "2026-12-01T00:00:00Z").fired.length, 0);
 });
 
 test("evidence hash chain detects tampering", () => {
@@ -256,10 +258,23 @@ test("progression supports AND conditions and domain targeting; self figures may
       { when: [{ metric: "integrity", op: "<=", value: "C" }, { metric: "complaints", op: ">=", value: 3 }], then: { action: "decision.make", domain: "ops", set: { tier_max: "tactical" } } },
     ],
   };
-  assert.equal(applyProgression(m, { self: { integrity: "C", complaints: 1 } }).fired.length, 0);
-  const { mandate: narrowed, fired } = applyProgression(m, { self: { integrity: "C", complaints: 4 } });
+  assert.equal(applyProgression(m, { self: { integrity: "C", complaints: 1 } }, at).fired.length, 0);
+  const { mandate: narrowed, fired } = applyProgression(m, { self: { integrity: "C", complaints: 4 } }, at);
   assert.equal(fired.length, 1);
   assert.equal(narrowed.scopes[0].tier_max, "operational");
   assert.equal(narrowed.scopes[1].tier_max, "tactical");
   assert.equal("limits" in narrowed.scopes[1], false);
+});
+
+test("MODEL.md §4 states exactly the level names and sentences the code uses", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { LEVEL_NAMES, LEVEL_SUMMARIES } = await import("../src/index.ts");
+  const md = readFileSync(new URL("../../../spec/v0.2/MODEL.md", import.meta.url), "utf8");
+  for (const l of [0, 1, 2, 3, 4, 5] as const) {
+    const row = md.split("\n").find((r) => r.startsWith(`| ZH${l} |`));
+    assert.ok(row, `MODEL.md has no row for ZH${l}`);
+    const cells = row.split("|").map((c) => c.trim());
+    assert.equal(cells[2], LEVEL_NAMES[l]);
+    assert.equal(cells[7], LEVEL_SUMMARIES[l]);
+  }
 });

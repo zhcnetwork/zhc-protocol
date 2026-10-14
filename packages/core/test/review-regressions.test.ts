@@ -1,20 +1,28 @@
 // Regression tests for the problems found in independent reviews of v0.2 (October 2026). Each
-// confirmed finding (labelled R01–A02, G-*, C07) is pinned as an expectation of the corrected
-// v0.2.1 behaviour. Findings about the reference desk rather than the core are tested there.
+// confirmed finding (labelled R01–A02, G-*, C07, and V01–V20 from the spec-against-code review of
+// revision 0.2.1) is pinned as an expectation of the corrected behaviour. Findings about the
+// reference desk rather than the core are tested there.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { sign as nodeSign } from "node:crypto";
 import {
   applyProgression,
+  canonicalJSON,
   evaluate,
   evaluateChain,
   ExposureBook,
   generateIssuerKeys,
   isAttenuationOf,
   issueAttestation,
+  mandateKeyResolver,
   score,
   ScoreInputError,
   scoreIntegrity,
+  signMandate,
+  validateMandate,
+  validatorKeyResolver,
   verifyAttestation,
+  verifyMandate,
   type Mandate,
   type ZHCEvent,
 } from "../src/index.ts";
@@ -111,6 +119,11 @@ const mandate: Mandate = {
 };
 
 const denyCode = (v: ReturnType<typeof evaluate>) => (v.decision === "deny" ? v.code : v.decision);
+/** Signs any payload the way issueAttestation does, to build attestations it would refuse to issue. */
+const signCanonical = (payload: unknown, key: Parameters<typeof issueAttestation>[0]["privateKey"]) =>
+  nodeSign(null, Buffer.from(canonicalJSON(payload)), key).toString("base64url");
+/** ISO time `hours` after the fixtures' start (2026-07-01). */
+const atHour = (hours: number) => new Date(Date.parse("2026-07-01T00:00:00Z") + hours * 3_600_000).toISOString();
 
 test("M01: a money action without an amount is denied", () => {
   assert.equal(denyCode(evaluate(mandate, { action: "money.spend", at })), "invalid");
@@ -188,7 +201,7 @@ test("G-01: a company's own score can't widen its mandate", () => {
   for (let i = 0; i < 60; i++) fake.push({ ...base(i), type: "task.completed", domain: "d", actor: "ai", touch: "none" });
   const r = score(fake, undefined, { asOf: "2026-07-10T00:00:00Z" });
   assert.equal(r.profile.integrity, "U", "self-written tasks alone no longer earn A");
-  const p = applyProgression(m, { self: { integrity: "A" } });
+  const p = applyProgression(m, { self: { integrity: "A" } }, at);
   assert.equal(p.fired.length, 0);
   assert.equal(p.refused.length, 1, "the widening becomes a proposal for the issuer to sign");
   assert.equal(evaluate(p.mandate, { action: "money.refund", amount: usd(90000), at }).decision, "require_approval");
@@ -294,4 +307,159 @@ test("R: time the log doesn't cover is never counted as time without rescues", (
   const h = score(holed, undefined, { asOf: iso(end) });
   assert.ok((h.metrics.exposure_days ?? 0) < 62, "the 30-day hole adds at most one covered day");
   assert.ok(h.profile.axes.R < 4);
+});
+
+// --- Spec-against-code review of 0.2.1 (V-findings) ----------------------------------------
+
+test("V01: a progression rule can't change a scope's action or area", () => {
+  const m: Mandate = {
+    ...mandate,
+    scopes: [{ action: "money.refund", limits: { per_action: usd(1000) } }],
+    progression: [{ when: { metric: "integrity", op: ">=", value: "A" }, then: { action: "money.refund", set: { action: "money.spend" } as never } }],
+  };
+  assert.ok(validateMandate(m).some((p) => /action or area/.test(p)), "the mandate is malformed");
+  assert.equal(denyCode(evaluate(m, { action: "money.spend", amount: usd(10), at })), "invalid");
+  const p = applyProgression(m, { self: { integrity: "A" } }, at);
+  assert.equal(p.fired.length, 0);
+  assert.equal(p.mandate.scopes[0].action, "money.refund");
+});
+
+test("V02: a malformed counterparty check fails closed", () => {
+  const m: Mandate = { ...mandate, scopes: [{ action: "network.buy", limits: { per_action: usd(1000) }, counterparty: { min_level: 2, min_integrity: "B" } }] };
+  const buy = (counterparty: unknown) => evaluate(m, { action: "network.buy", amount: usd(10), at, counterparty: counterparty as never });
+  assert.equal(denyCode(buy({ assurance: "measured" })), "invalid", "no level or integrity");
+  assert.equal(denyCode(buy({ level: 3, integrity: "Z", assurance: "measured" })), "invalid", "unknown grade");
+  assert.equal(denyCode(buy({ level: 3, integrity: "A", assurance: "measured" })), "allow");
+  const bad: Mandate = { ...m, scopes: [{ ...m.scopes[0], counterparty: { min_assurance: "gold" as never } }] };
+  assert.ok(validateMandate(bad).some((p) => /min_assurance/.test(p)));
+  assert.equal(denyCode(evaluate(bad, { action: "network.buy", amount: usd(10), at, counterparty: { level: 3, integrity: "A", assurance: "claimed" } })), "invalid");
+});
+
+test("V03: a delegation chain must reach its root, and a revoked ancestor denies as revoked", () => {
+  const parent: Mandate = { ...mandate, id: "p", subject: "agent:a" };
+  const child: Mandate = { ...mandate, id: "c", issuer: "agent:a", subject: "agent:b", parent: "p", scopes: [{ action: "money.spend", limits: { per_action: usd(500), per_day: usd(1000) } }] };
+  const req = { action: "money.spend" as const, amount: usd(100), at };
+  assert.equal(denyCode(evaluateChain([child], req)), "invalid", "leaving the parent out is not allowed");
+  assert.equal(new ExposureBook().reserve([child], req, { id: "r1" }).held, false);
+  assert.equal(denyCode(evaluateChain([child, parent], req)), "allow");
+  assert.equal(denyCode(evaluateChain([child, { ...parent, revoked: true }], req)), "revoked");
+});
+
+test("V04: delegation is compared with the parent's most specific scope", () => {
+  const parent: Mandate = {
+    ...mandate,
+    id: "p",
+    scopes: [
+      { action: "money.spend", limits: { per_action: usd(100000) } },
+      { action: "money.spend", domain: "ads", limits: { per_action: usd(1000) } },
+    ],
+  };
+  const base = { ...mandate, id: "c", issuer: parent.subject, subject: "agent:b", parent: "p" };
+  assert.equal(isAttenuationOf({ ...base, scopes: [{ action: "money.spend", domain: "ads", limits: { per_action: usd(50000) } }] }, parent).ok, false);
+  assert.equal(isAttenuationOf({ ...base, scopes: [{ action: "money.spend", limits: { per_action: usd(50000) } }] }, parent).ok, false, "an area-less child scope also applies to ads");
+  assert.equal(
+    isAttenuationOf({ ...base, scopes: [{ action: "money.spend", limits: { per_action: usd(50000) } }, { action: "money.spend", domain: "ads", limits: { per_action: usd(500) } }] }, parent).ok,
+    true,
+  );
+});
+
+test("V05: a delegated mandate can't redirect or loosen escalation, or widen rail bindings", () => {
+  const parent: Mandate = { ...mandate, id: "p", bindings: { mpp: { session_limit: usd(1000) } } };
+  const ok: Mandate = { ...mandate, id: "c", issuer: parent.subject, subject: "agent:b", parent: "p", bindings: { mpp: { session_limit: usd(500) } } };
+  assert.equal(isAttenuationOf(ok, parent).ok, true);
+  assert.equal(isAttenuationOf({ ...ok, escalation: { to: parent.subject, timeout_s: 60, on_timeout: "deny" } }, parent).ok, false, "the delegating agent can't approve itself");
+  assert.equal(isAttenuationOf({ ...ok, escalation: { ...parent.escalation, on_timeout: "allow" } }, parent).ok, false);
+  assert.equal(isAttenuationOf({ ...ok, bindings: { mpp: { session_limit: usd(5000) } } }, parent).ok, false);
+});
+
+test("V06: mandate keys and validator keys aren't interchangeable", () => {
+  const owner = generateIssuerKeys();
+  const v = generateIssuerKeys();
+  const company = {
+    id: "did:web:co.example",
+    signing_keys: [{ id: "k1", holder: "human:h", alg: "Ed25519" as const, public_key_pem: owner.publicKeyPem }],
+    validator_keys: [{ id: "v1", alg: "Ed25519" as const, public_key_pem: v.publicKeyPem }],
+  };
+  const signed = signMandate(mandate, owner.privateKey, "k1");
+  assert.deepEqual(verifyMandate(signed, mandateKeyResolver(company)), { ok: true });
+  assert.equal(validatorKeyResolver(company)("human:h", "k1"), undefined, "a mandate key is not a validator key");
+  // An attestation signed with the company's mandate key doesn't verify as the company's attestation.
+  const { profile } = score(zh3Company(), manifest, { asOf: FIXTURE_AS_OF, chainVerified: true });
+  const a = issueAttestation({ issuer: company.id, kid: "k1", profile, evidenceHead: "h", now: "2026-09-01T00:00:00Z", privateKey: owner.privateKey });
+  assert.equal(verifyAttestation(a, { resolveKey: validatorKeyResolver(company), now: "2026-09-02T00:00:00Z" }).ok, false);
+  // And a validator key can't sign a mandate.
+  const forged = signMandate({ ...mandate, issuer: company.id }, v.privateKey, "v1");
+  assert.equal(verifyMandate(forged, mandateKeyResolver(company)).ok, false);
+});
+
+test("V07: verification enforces independence and the 90-day limit exactly", () => {
+  const keys = generateIssuerKeys();
+  const resolveKey = (issuer: string) => (issuer === "did:web:v.example" ? keys.publicKeyPem : undefined);
+  const { profile } = score(zh3Company(), manifest, { asOf: FIXTURE_AS_OF, chainVerified: true });
+  const a = issueAttestation({ issuer: "did:web:v.example", profile, evidenceHead: "h", now: "2026-09-01T00:00:00Z", privateKey: keys.privateKey });
+  const resign = (payload: typeof a.payload) => ({ ...a, payload, signature: signCanonical(payload, keys.privateKey) });
+  const conflicted = resign({ ...a.payload, independence: { common_control: true, fee_depends_on_outcome: true } });
+  assert.equal(verifyAttestation(conflicted, { resolveKey, now: "2026-09-02T00:00:00Z" }).ok, false);
+  const long = resign({ ...a.payload, expires_at: new Date(Date.parse(a.payload.issued_at) + 90 * DAY + 4 * 60_000).toISOString() });
+  assert.equal(verifyAttestation(long, { resolveKey, now: "2026-09-02T00:00:00Z" }).reason, "validity longer than allowed");
+});
+
+test("V08: misconduct no good conduct could offset counts before a metric is observed", () => {
+  const ev: ZHCEvent[] = [];
+  for (let i = 0; i < 60; i++) ev.push({ ...base(i), type: "task.completed", domain: "d", actor: "ai", touch: "none" });
+  for (let i = 0; i < 19; i++) ev.push({ ...base(100 + i), type: "interaction", channel: "email", ai_disclosed: false });
+  for (let i = 0; i < 19; i++) ev.push({ ...base(200 + i), type: "conduct.complaint", severity: "major" });
+  assert.equal(scoreIntegrity(ev).grade, "D");
+  // One miss in 19 could still end at 95% after the 20th, so it isn't decisive: unrated, not C.
+  const mild: ZHCEvent[] = ev.filter((e) => e.type === "task.completed");
+  for (let i = 0; i < 19; i++) mild.push({ ...base(300 + i), type: "interaction", channel: "email", ai_disclosed: i !== 0 });
+  assert.equal(scoreIntegrity(mild).grade, "U");
+});
+
+test("V09: the volume floor counts only the AI's own actions", () => {
+  const ev: ZHCEvent[] = [];
+  for (let i = 0; i < 50; i++) ev.push({ ...base(i), type: "money.moved", direction: "in", category: "revenue", money: usd(100), authorized_by: "human_approval" });
+  for (let i = 0; i < 20; i++) ev.push({ ...base(60 + i), type: "interaction", channel: "email", ai_disclosed: true });
+  ev.push({ ...base(90), type: "conduct.refund_request", eligible: true, honored: true });
+  const r = scoreIntegrity(ev);
+  assert.equal(r.metrics.actions, 0);
+  assert.equal(r.grade, "U");
+});
+
+test("V11: unattended stretches start when a session ends and skip holes in the log", () => {
+  const ev: ZHCEvent[] = [];
+  for (let h = 0; h <= 130; h++) ev.push({ ...base(h), type: "task.completed", domain: "d", actor: "ai", touch: "none" });
+  // One long session of approvals from hour 100 to hour 120 (contacts 50 minutes apart).
+  for (let m = 100 * 60; m <= 120 * 60; m += 50) ev.push({ ...base(m / 60 + 0.01), type: "decision.made", tier: "operational", origin: "ai", decided_by: "human", approval: "pre" });
+  const r = score(ev, undefined, { asOf: atHour(130) });
+  assert.ok(Math.abs((r.metrics.longest_unattended_hours ?? 0) - 100) < 0.1, `longest ${r.metrics.longest_unattended_hours}`);
+  // No contacts at all, with a 300-hour hole in the middle of the log.
+  const holed: ZHCEvent[] = [];
+  for (let h = 0; h <= 100; h++) holed.push({ ...base(h), type: "task.completed", domain: "d", actor: "ai", touch: "none" });
+  for (let h = 400; h <= 500; h++) holed.push({ ...base(h), type: "task.completed", domain: "d", actor: "ai", touch: "none" });
+  const hr = score(holed, undefined, { asOf: atHour(500) });
+  assert.ok((hr.metrics.longest_unattended_hours ?? 0) < 230, `longest ${hr.metrics.longest_unattended_hours}`);
+});
+
+test("V12: a rule with no area targets only the area-less scope", () => {
+  const m: Mandate = {
+    ...mandate,
+    scopes: [{ action: "money.spend", domain: "ads", limits: { per_action: usd(1000) } }],
+    progression: [{ when: { metric: "level", op: ">=", value: 3, source: "processor" }, then: { action: "money.spend", set: { limits: { per_action: usd(100000) } } } }],
+  };
+  const p = applyProgression(m, { processor: { level: 4 } }, at);
+  assert.equal(p.fired.length, 0);
+  assert.equal(p.mandate.scopes[0].limits?.per_action?.amount, 1000);
+});
+
+test("V14: N2 needs the sale of a service the manifest lists", () => {
+  const ev = zh3Company();
+  ev.push({ ...base(1000), type: "network.transaction", counterparty: "did:web:x.example", counterparty_is_zhc: true, direction: "sell", money: usd(4900), service: "unlisted" });
+  assert.equal(score(ev, manifest, { asOf: FIXTURE_AS_OF }).profile.axes.N, 1);
+  ev.push({ ...base(1001), type: "network.transaction", counterparty: "did:web:x.example", counterparty_is_zhc: true, direction: "sell", money: usd(4900), service: "svc" });
+  assert.equal(score(ev, manifest, { asOf: FIXTURE_AS_OF }).profile.axes.N, 2);
+});
+
+test("V20: the evidence gap is unknown, not zero, when there is no evidence", () => {
+  assert.equal(score([], manifest, { asOf: FIXTURE_AS_OF }).metrics.evidence_gap_hours, null);
 });

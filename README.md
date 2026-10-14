@@ -39,7 +39,7 @@ A profile looks like this:
 ZH3·A [O3 D2 F2 R2] N1 S2 attested
 ```
 
-ZH3 (Business Operator), integrity A. The level is set by the weakest of four axes: operations, decisions, finance and resilience. Network participation (N1) and scope (S2) are reported beside it. An independent validator signed it.
+ZH3 (Business Operator), integrity A. The level is the highest one whose gates all four gating axes meet: operations, decisions, finance and resilience. Network participation (N1) and scope (S2) are reported beside it. An independent validator signed it.
 
 ## Repository
 
@@ -62,20 +62,20 @@ npm run examples     # regenerate /examples
 ```
 
 ```ts
-import { score, formatProfile, evaluateChain, ExposureBook, verifyChain, verifyAttestation, manifestKeyResolver } from "./packages/core/src/index.ts";
+import { score, formatProfile, ExposureBook, verifyChain, verifyAttestation, validatorKeyResolver } from "./packages/core/src/index.ts";
 
 const { ok } = verifyChain(events);
 const report = score(events, manifest, { asOf: new Date().toISOString(), chainVerified: ok });
 formatProfile(report.profile);         // "ZH3·A [O3 D2 F2 R2] N1 S2 measured"
 report.profile.limited_by;             // axes blocking the next level
 
-// Authority: evaluate against the agent's mandate and every mandate above it, with shared limits.
+// Authority: evaluate against the agent's mandate and every mandate up to the root, with shared limits.
 const book = new ExposureBook();
 book.reserve([agentMandate, parentMandate], { action: "money.refund", amount: { amount: 3000, currency: "USD" }, at }, { id: "refund-1" });
 // → { verdict: { decision: "allow" | "require_approval" | "deny", ... }, held }
 
-// Attestations verify only against the issuer's published keys.
-verifyAttestation(attestation, { resolveKey: manifestKeyResolver(validatorManifest) });
+// Attestations verify only against the issuer's published validator keys.
+verifyAttestation(attestation, { resolveKey: validatorKeyResolver(validatorManifest) });
 ```
 
 `src/browser.ts` exports the subset that runs in browsers and Workers (hashing and signing through Web Crypto).

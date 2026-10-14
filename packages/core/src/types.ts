@@ -311,17 +311,22 @@ export interface Manifest {
 /** Returns a trusted public key (SPKI PEM) for an issuer and key id, or undefined if unknown. */
 export type KeyResolver = (issuer: string, kid?: string) => string | undefined;
 
-/** Key resolver over a manifest's published keys (signing_keys for mandates, validator_keys for attestations). */
-export function manifestKeyResolver(manifest: Pick<Manifest, "id" | "signing_keys" | "validator_keys">): KeyResolver {
-  return (issuer, kid) => {
-    const signing = (manifest.signing_keys ?? []).find((k) => k.holder === issuer && (kid === undefined || k.id === kid));
-    if (signing) return signing.public_key_pem;
-    if (issuer === manifest.id) {
-      const v = (manifest.validator_keys ?? []).find((k) => kid === undefined || k.id === kid);
-      if (v) return v.public_key_pem;
-    }
-    return undefined;
-  };
+/**
+ * Resolves the keys that may sign this company's *mandates*: `signing_keys` whose holder is the
+ * mandate's issuer. Never returns a validator key, so an attestation key can't authorize spending.
+ */
+export function mandateKeyResolver(manifest: Pick<Manifest, "signing_keys">): KeyResolver {
+  return (issuer, kid) =>
+    (manifest.signing_keys ?? []).find((k) => k.alg === "Ed25519" && k.holder === issuer && (kid === undefined || k.id === kid))?.public_key_pem;
+}
+
+/**
+ * Resolves the keys this company signs *attestations* with: `validator_keys`, only for attestations
+ * whose issuer is the manifest's own id. Never returns a mandate-signing key.
+ */
+export function validatorKeyResolver(manifest: Pick<Manifest, "id" | "validator_keys">): KeyResolver {
+  return (issuer, kid) =>
+    issuer === manifest.id ? (manifest.validator_keys ?? []).find((k) => k.alg === "Ed25519" && (kid === undefined || k.id === kid))?.public_key_pem : undefined;
 }
 
 // ---------------------------------------------------------------------------

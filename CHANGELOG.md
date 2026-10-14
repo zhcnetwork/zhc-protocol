@@ -10,17 +10,17 @@ This revision fixes problems found in independent reviews of v0.2. Each confirme
 
 ### Authority (mandates)
 
-- **Evaluation fails closed.** `evaluate()` denies with the new code `invalid` when the mandate is malformed, the time is invalid, an amount is negative, fractional or missing on an action that moves money, or the request lacks a field that a constraint in the chosen scope needs (amount, tier, relative change).
+- **Evaluation fails closed.** `evaluate()` denies with the new code `invalid` when the mandate is malformed, the time is invalid, an amount is negative, fractional or missing on an action that moves money, a counterparty profile or requirement is malformed, or the request lacks a field that a constraint in the chosen scope needs (amount, tier, relative change).
 - **The most specific scope applies.** A scope for the request's area beats an area-less one. A request for an area-limited action must name its area.
-- **Delegated authority is checked link by link, with shared limits.** `evaluateChain()` evaluates the request against every mandate up to the root. `ExposureBook` reserves amounts against every mandate in the chain, so a parent's cap bounds everything spent beneath it. Approvals are re-checked against current mandates and usage when the action executes (PROTOCOL §3.1).
-- **Delegation checks provenance.** `isAttenuationOf()` now requires `child.parent` to be the parent's id, the child's issuer to be the parent's subject, and the child's validity to sit inside the parent's. `supersedes` records a replacement, separate from delegation.
-- **A company can't raise its own limits.** Progression conditions name their source: `self`, `attestation` or `processor`. A rule with any self-sourced condition, including one on the company's own ZH score, may only narrow authority. A widening it would have made is returned as `refused`, a proposal for the issuer to sign. `attestedFacts()` turns a verified, independent attestation into facts a rule may use.
-- **Mandate signatures.** `signMandate()` and `verifyMandate()` (Ed25519 over canonical JSON). Keys are published in the manifest's new `signing_keys`.
+- **Delegated authority is checked link by link, with shared limits.** `evaluateChain()` evaluates the request against every mandate up to the root, denies an incomplete chain, and denies with `revoked` when any ancestor is revoked. `ExposureBook` reserves amounts against every mandate in the chain, so a parent's cap bounds everything spent beneath it. Approvals are re-checked against current mandates and usage when the action executes (PROTOCOL §3.1).
+- **Delegation checks provenance.** `isAttenuationOf()` now requires `child.parent` to be the parent's id, the child's issuer to be the parent's subject, and the child's validity to sit inside the parent's. It compares each child scope with the parent's most specific scope for the same requests, keeps escalation with the parent's approver and no more permissive on timeout, and keeps rail bindings no larger. `supersedes` records a replacement, separate from delegation.
+- **A company can't raise its own limits.** Progression conditions name their source: `self`, `attestation` or `processor`. A rule with any self-sourced condition, including one on the company's own ZH score, may only narrow authority. A widening it would have made is returned as `refused`, a proposal for the issuer to sign. No rule may change a scope's action or area, a rule with no area targets only the area-less scope, and attestation facts count only until the attestation expires. `attestedFacts()` turns a verified, independent attestation into facts a rule may use.
+- **Mandate signatures.** `signMandate()` and `verifyMandate()` (Ed25519 over canonical JSON). Keys are published in the manifest's new `signing_keys`. Mandate keys and validator keys have one purpose each: `mandateKeyResolver()` reads only `signing_keys`, `validatorKeyResolver()` only `validator_keys`.
 
 ### Attestations
 
-- `verifyAttestation()` requires a key resolver. The key carried in an attestation is never used. `manifestKeyResolver()` resolves keys from a manifest.
-- Verification enforces issue time not in the future, expiry after issue, validity of at most 90 days, issuer not the subject, profile company equal to the subject.
+- `verifyAttestation()` requires a key resolver. The key carried in an attestation is never used. `validatorKeyResolver()` resolves keys from the issuer's manifest.
+- Verification enforces issue time not in the future, expiry after issue, validity of at most 90 days (no skew allowance), issuer not the subject, profile company equal to the subject, and the validator's own statement of independence.
 - `issueAttestation()` refuses a validator under common control with the subject, or one whose fee depends on the outcome. Payloads may carry `kid`, `manifest_sha256` and `independence`.
 
 ### Scoring (`zhc-score/0.2.1`)
@@ -30,8 +30,10 @@ This revision fixes problems found in independent reviews of v0.2. Each confirme
 - **R measures rescues.** Mean time between rescues, over a lookback as long as the claim, so R4 and R5 are reachable. Only time the evidence covers counts: each event covers at most the next 24 hours, so a gap in the log or a stale log isn't rescue-free time, and the gap since the last event is reported. Open incidents (new event `incident.opened`) count as not recovered. With no incidents, R is capped at R2. Human operating contacts, sessions and unattended stretches are reported beside the profile. Levels are renamed "… Without Rescue".
 - **O:** O3 needs at least one handled exception, O4 counts every observed area as well as the declared ones, and O5 needs a retained AI change that was evaluated and improved outcomes.
 - **D and F:** minimum counts for D3, F1, F2 and F4. F value shares are computed per currency. F5 needs every capital allocation under mandate, with no distribution required. F2 and F4 are renamed "Managed Pricing" and "Capital Allocation".
-- **Integrity fails closed.** A and B require every applicable conduct metric to be observed, and at least one to be observed; otherwise the grade is U. Attempts the policy engine blocked are reported as control effectiveness and no longer graded.
-- **Level names and sentences match the gates.** ZH5 is now "Chartered Autonomous Company". "Zero-human runtime" is defined as a separate statement about a period (MODEL §9), to be measured from v0.3.
+- **Integrity fails closed.** A and B require every applicable conduct metric to be observed, and at least one to be observed; otherwise the grade is U. A metric not yet observed is judged at its best possible value, so decisive misconduct counts at once. Only the AI's own actions (its tasks, its decisions, money moved under mandate) count toward the volume floor. Attempts the policy engine blocked are reported as control effectiveness and no longer graded.
+- **Level names and sentences say no more than the gates.** ZH5 is now "Chartered Autonomous Company". O5 is "Self-Improving" (was "Self-Optimizing") and N5 "Founder" (was "Architect"). "Zero-human runtime" is defined as a separate statement about a period (MODEL §9), to be measured from v0.3.
+- **N2** counts only sales of a service the manifest lists.
+- **Unattended stretches** run from the end of one session of human contact to the start of the next, over time the evidence covers. The evidence gap is null when there is no evidence.
 - Profiles carry `method`, and `scope_basis: "declared"`.
 
 ### Evidence
@@ -43,7 +45,7 @@ This revision fixes problems found in independent reviews of v0.2. Each confirme
 ### Specification text
 
 - §0 says what each object is not, and lists the institutions not yet covered: bank, dispute forum, capital and insurance.
-- §7: a ZH level is a preference, not a payment decision. No public registry is claimed. Verifiers restrict what they fetch.
+- §7: a ZH level isn't a payment decision; a buyer may still require one as policy. No public registry is claimed. Verifiers restrict what they fetch.
 - §8: Governed conformance requires the re-check at execution and a halt control, with defined halt semantics.
 - §9 and §10: new security considerations. Wire version, revision and method are versioned separately.
 
@@ -54,7 +56,7 @@ This revision fixes problems found in independent reviews of v0.2. Each confirme
 
 ### Breaking changes for implementers
 
-`score()` needs `opts.asOf`. `verifyAttestation()` needs `resolveKey`. `applyProgression()` takes `{ self, attestation, processor }` facts and returns `refused`. `limited_by` never contains N. `IntegrityResult` adds `observation` and `control`. R metrics are renamed (`mtbr_hours` replaces the intervention-based figure).
+`score()` needs `opts.asOf`. `verifyAttestation()` needs `resolveKey`. `applyProgression(mandate, facts, at)` takes `{ self, attestation, processor }` facts and the time it is applied, and returns `refused`. `limited_by` never contains N. `IntegrityResult` adds `observation` and `control`. R metrics are renamed (`mtbr_hours` replaces the intervention-based figure). `tier_max` can't be `charter`. Event logs must carry `hash` on every line.
 
 ## 0.2.0 — 2026-10-12
 

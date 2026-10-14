@@ -63,7 +63,8 @@
       ],
       "properties": {
         "to": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "timeout_s": {
           "type": "integer",
@@ -111,10 +112,26 @@
                 "$ref": "#/$defs/action"
               },
               "set": {
-                "type": "object"
+                "type": "object",
+                "description": "New values for the target scope. May not change its action or area.",
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "action"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "domain"
+                      ]
+                    }
+                  ]
+                }
               },
               "domain": {
-                "type": "string"
+                "type": "string",
+                "description": "The target scope's area. Omitted: the area-less scope."
               }
             }
           },
@@ -253,7 +270,7 @@
               ]
             }
           },
-          "description": "The buyer's preferred minimums for a counterparty. A ZH level is a preference, not a payment decision (PROTOCOL §7)."
+          "description": "The buyer's minimums for a counterparty, enforced like any other limit. A ZH level isn't evidence of capacity to pay or perform (PROTOCOL §7)."
         }
       }
     },

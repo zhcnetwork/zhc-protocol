@@ -103,6 +103,9 @@ export function verifyAttestation(a: Attestation, opts: VerifyOptions): { ok: bo
   if (p.issuer === p.subject) return { ok: false, reason: "self-attestation" };
   if (p.profile?.company !== p.subject) return { ok: false, reason: "profile company does not match subject" };
   if (p.profile?.assurance !== "attested") return { ok: false, reason: "profile is not marked attested" };
+  if (p.independence && (p.independence.common_control !== false || p.independence.fee_depends_on_outcome !== false)) {
+    return { ok: false, reason: "the validator says it isn't independent of the subject" };
+  }
   const pem = opts.resolveKey(p.issuer, p.kid);
   if (!pem) return { ok: false, reason: "issuer key not trusted" };
   let valid = false;
@@ -119,7 +122,8 @@ export function verifyAttestation(a: Attestation, opts: VerifyOptions): { ok: bo
   const skew = (opts.maxSkewSeconds ?? 300) * 1000;
   if (issued > now + skew) return { ok: false, reason: "issued in the future" };
   if (expires <= issued) return { ok: false, reason: "expires before it was issued" };
-  if (expires - issued > THRESHOLDS.attestation_ttl_days * 86_400_000 + skew) return { ok: false, reason: "validity longer than allowed" };
+  // Skew applies only to comparing the issue time with our clock, never to the allowed validity.
+  if (expires - issued > THRESHOLDS.attestation_ttl_days * 86_400_000) return { ok: false, reason: "validity longer than allowed" };
   if (now >= expires) return { ok: false, reason: "expired" };
   return { ok: true };
 }

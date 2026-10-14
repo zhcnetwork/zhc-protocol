@@ -13,7 +13,7 @@ A ZH profile is meant to be read by counterparties (customers, other companies, 
 
 Three ideas carry the model:
 
-1. **Autonomy has several dimensions, and the weakest one sets the level.** A company is only as autonomous as its most human-dependent axis.
+1. **Autonomy has several dimensions, and one weak axis holds the whole company back.** The level is the highest one whose gates every gating axis meets.
 2. **Autonomy and integrity are reported together, never apart.** A level always travels with an integrity grade. A highly autonomous company that deceives people is a hazard, not an achievement.
 3. **Claims are cheap; evidence is the product.** Every profile states how it was produced: claimed, provisional, measured or attested.
 
@@ -32,7 +32,7 @@ ZH3·A [O3 D2 F3 R2] N4 S3 measured
 
 Compact machine form: `zh0.2.1/3/A/O3D2F3R2/N4/S3/measured`.
 
-A profile string that states a composite level its axes don't support is invalid (`parseProfile` rejects it). Legacy v0.2 strings, with N inside the brackets (`ZH3·A [O3 D2 F3 R2 N4] S3`), still parse and are validated under the v0.2 gates they were written with.
+A profile string whose stated level differs from the level its axes compute to is invalid (`parseProfile` rejects it). Legacy v0.2 strings, with N inside the brackets (`ZH3·A [O3 D2 F3 R2 N4] S3`), still parse and are validated under the v0.2 gates they were written with.
 
 ## 3. The axes
 
@@ -42,7 +42,7 @@ O, D, F and R gate the composite level. N is reported beside it.
 
 ### O — Operational Autonomy · *Who does the work?*
 
-An *area* is a business domain named on `task.completed` events. Every area that appears in the evidence counts, along with every area declared in the manifest: an observed area can't be left out.
+An *area* is a business domain named on `task.completed` events. Tasks with no area count as one area of their own. Every area that appears in the evidence counts, along with every area declared in the manifest: an observed area can't be left out.
 
 | Level | Name | Criterion (v0.2.1 thresholds) |
 |---|---|---|
@@ -50,7 +50,7 @@ An *area* is a business domain named on `task.completed` events. Every area that
 | O1 | Assisted | At least one task executed by AI. Per-item review is fine. |
 | O2 | Supervised | In some area with ≥20 tasks, ≥50% are AI-executed with no per-item review (batch review allowed). |
 | O3 | Domain-Autonomous | In some area with ≥20 tasks, ≥90% are AI-executed with **no human touch**, the area handled at least one exception, and ≥50% of its exceptions were handled by AI. An area with no exceptions hasn't shown it can handle them. |
-| O4 | Cross-Domain | Every declared or observed area (at least 2) meets O3, and ≥90% of cross-area handoffs are routed by AI. |
+| O4 | Cross-Domain | Every declared or observed area (at least 2) meets O3, and ≥90% of cross-area handoffs (at least one) are routed by AI. |
 | O5 | Self-Improving | O4, plus at least one retained, AI-initiated process change that was **evaluated** against comparable work and **improved** outcomes (`process.changed` with `evaluated: true, outcome: "improved"`). There is no quota of changes and no requirement to create or retire roles. |
 
 ### D — Decision Authority · *Who decides what to do?*
@@ -72,7 +72,7 @@ Decisions fall into four tiers:
 | D4 | Strategic Autonomy | ≥80% of ≥3 strategic decisions are autonomous, with a veto rate under 10%. |
 | D5 | Full Agency within Charter | ≥95% autonomy on every non-charter tier, with ≥5 strategic decisions. |
 
-Known limitation: the company labels each decision's tier itself. v0.3 will weight decisions by money at stake (§10).
+Known limitation: the company labels each decision's tier itself. v0.3 will weight decisions by money at stake (§11).
 
 ### F — Financial Autonomy · *Who controls the money?*
 
@@ -90,7 +90,7 @@ A money movement is autonomous when it is **authorized by a mandate** (PROTOCOL 
 ### R — Resilience · *How often must a person rescue it, and does it recover on its own?*
 
 - A **rescue** is a `human.intervention` other than a `routine` board review: a fix, an override, a kill switch.
-- **Exposure** is the time the evidence covers. Each event covers at most the 24 hours after it, so a gap in the log, or a log that stopped before `asOf`, never counts as time without rescues.
+- **Exposure** is the time the evidence covers. Each event covers at most the 24 hours after it, so a gap in the log, or a log that stopped before `asOf`, counts only for its first 24 hours.
 - **MTBR** is the mean time between rescues: exposure ÷ (rescues + 1). A quiet stretch of length *L* therefore supports "at least *L* between rescues", and no more.
 - **AI recovery** is the share of incidents in the lookback resolved by AI. **Open incidents** (`incident.opened` with no linked `incident.resolved` by `asOf`) count as not recovered.
 
@@ -103,14 +103,14 @@ A money movement is autonomous when it is **authorized by a mandate** (PROTOCOL 
 | R4 | Months Without Rescue | ≥ 90 days | ≥ 90% | 90 days | as R3; fixes retained ≥ 90%; recurrence ≤ 10% |
 | R5 | A Year Without Rescue | ≥ 365 days | ≥ 95% | 365 days | as R4 |
 
-A company with no incidents in the lookback hasn't demonstrated recovery, so it is capped at R2.
+A company with no incidents in the lookback hasn't demonstrated recovery, so it is capped at R2. Because the lookback is no longer than the claim, R4 and R5 need no rescues at all in the lookback and evidence that covers all of it.
 
 **Approvals are not rescues.** A person approving a refund or a price change is measured by O, D and F, where it already lowers the level. R counts unplanned rescues, so the same approval isn't charged against three axes.
 
 How much a person was involved overall is still reported beside the profile, not gating:
 - **human operating contacts:** approvals, overrides, rescues, human-done or per-item-reviewed work;
 - **sessions:** contacts within an hour count as one;
-- the **longest** and **current** stretch with no human contact, measured up to the end of the evidence;
+- the **longest** and **current** stretch with no human contact: from the end of one session to the start of the next, counting only time the evidence covers;
 - the **evidence gap**: time from the last event to `asOf`. A large gap means the profile describes the past.
 
 The "zero-human runtime" statement (§9) is built on these.
@@ -132,16 +132,16 @@ A counterparty counts when it publishes a ZHC manifest. In v0.2.1 that fact, and
 
 ## 4. Composite ZH levels
 
-The composite level is the highest level whose gates are met on **O, D, F and R**. The sentences below say exactly what the gates test, and no more. Public descriptions should use them, or say less (`LEVEL_SUMMARIES` in `model.ts`).
+The composite level is the highest level whose gates are met on **O, D, F and R**. The sentences below say no more than the gates test, and some say less. Public descriptions should use them, or say less (`LEVEL_SUMMARIES` in `model.ts`). The named person is a protocol requirement at every level (PROTOCOL §2), not a gate.
 
 | Level | Name | O | D | F | R | What it means |
 |---|---|---|---|---|---|---|
-| ZH0 | Tooling | 0 | 0 | 0 | 0 | People do the work and make the decisions. AI tools may help. |
-| ZH1 | Assisted | 1 | 1 | 0 | 1 | AI carries out some tasks and recommends decisions. People review its work and hold the money. |
-| ZH2 | Managed Autonomy | 2 | 2 | 1 | 2 | In at least one area, most work runs without item-by-item review. AI makes routine tactical calls and spends within set budgets. A person rarely has to rescue it. |
-| ZH3 | Business Operator | 3 | 2 | 2 | 2 | At least one business area runs end to end without a person touching the work, exceptions included. AI sets prices within limits. People still approve operational decisions. |
-| ZH4 | Autonomous Enterprise | 4 | 3 | 3 | 3 | Every declared area runs untouched, and AI routes work between them. AI handles nearly all operating money and makes operational decisions. It proposes strategy; people approve it. |
-| ZH5 | Chartered Autonomous Company | 5 | 5 | 5 | 4 | AI runs the company and its money, and makes every decision except charter matters, within a written charter. A named person holds the charter and the emergency brake, and answers for the company. |
+| ZH0 | Tooling | 0 | 0 | 0 | 0 | Below ZH1 on at least one axis. Usually people do the work, with AI tools helping. |
+| ZH1 | Assisted | 1 | 1 | 0 | 1 | AI does some of the work and recommends decisions. It goes eight hours or more between rescues, on average. |
+| ZH2 | Managed Autonomy | 2 | 2 | 1 | 2 | In at least one area, AI does half the work or more without item-by-item review. It makes most routine decisions, spends within budgets, and goes three days or more between rescues, on average. |
+| ZH3 | Business Operator | 3 | 2 | 2 | 2 | In at least one area, AI does 90% or more of the work untouched and handles at least half its exceptions. It changes prices within limits. Operational decisions may still need a person. |
+| ZH4 | Autonomous Enterprise | 4 | 3 | 3 | 3 | In every area, AI does 90% or more of the work untouched and routes the handoffs between areas. 90% or more of operating money moves under mandate, AI makes most operational decisions, and it goes three weeks or more between rescues. Strategy may still need a person. |
+| ZH5 | Chartered Autonomous Company | 5 | 5 | 5 | 4 | AI makes 95% or more of the decisions at every tier below the charter, moves 98% or more of operating money and every capital allocation under mandate, has kept a tested improvement, and goes 90 days or more between rescues. Charter decisions stay with a named person, who answers for the company. |
 
 Every score report includes `limited_by`: the gating axes that block the next level. It is usually the most useful line in a report.
 
@@ -160,7 +160,7 @@ Integrity is graded A–D, or U (unrated). It is computed from conduct evidence,
 | Refunds honored | the manifest lists a paid service, or there is revenue | ≥ 1 eligible refund request |
 
 **Grades.** Grading happens in three steps:
-1. Fewer than 50 AI actions (tasks, decisions and money movements): **U**.
+1. Fewer than 50 AI actions (tasks the AI did, decisions it made, and money it moved under mandate): **U**.
 2. Grade the evidence that exists:
 
 | Grade | Name | Deception | Mandate breaches executed | Complaints / 1k interactions | Eligible refunds honored | AI disclosure |
@@ -170,7 +170,8 @@ Integrity is graded A–D, or U (unrated). It is computed from conduct evidence,
 | **C** | Watch | no major | ≤ 1, remediated | ≤ 40 | ≥ 85% | ≥ 90% |
 | **D** | Unsafe | anything worse | | | | |
 
-3. **A or B also require every applicable metric to be observed, and at least one metric to be observed.** Otherwise the grade is **U**, and the report says which metrics are missing. Evidence of misconduct always counts: C and D stand even when other metrics are unobserved.
+   A metric that applies but isn't yet observed is judged at its best possible value: as if every interaction or refund request still missing from its minimum had gone well. So misconduct that no amount of good conduct could offset already counts.
+3. **A or B also require every applicable metric to be observed, and at least one metric to be observed.** Otherwise the grade is **U**, and the report says which metrics are missing. C and D stand even when some metrics are unobserved.
 
 **Control effectiveness is not conduct.** Attempts the policy engine stopped (`conduct.mandate_blocked`) are reported separately and never graded. A company that runs a strict policy engine and records every denial must not look worse than one that records none.
 
@@ -188,7 +189,7 @@ Scope (S0–S5) describes how complex the business is: Single Task, Single Funct
 |---|---|---|
 | **claimed** | Self-assessment questionnaire. Integrity capped at B. | Orientation. Nothing was checked. |
 | **provisional** | Computed from evidence, but under 30 days or under 200 events, or the hash chain wasn't verified. | Internal tracking. |
-| **measured** | Computed by the reference method from ≥30 days and ≥200 events of a hash-chained log whose chain verified. | That the company's own log, as written, supports the profile. **Not** that the log is complete or true: the company wrote it. v0.3 will require external records (payment processors, inboxes, counterparties) for the events that move the score. |
+| **measured** | Computed by the reference method from ≥30 days and ≥200 events of a hash-chained log whose chain the scorer's caller verified (`chainVerified`). | That the company's own log, as written, supports the profile. **Not** that the log is complete or true: the company wrote it. v0.3 will require external records (payment processors, inboxes, counterparties) for the events that move the score. |
 | **attested** | A measured profile that an independent validator recomputed and signed over a specific evidence head, after sampling external sources. Expires after 90 days. | What the validator checked, as stated in the attestation. Only a validator can produce it; a company's own score is at most measured. |
 
 ## 8. What a profile does not tell you
@@ -222,9 +223,11 @@ A human rescue ends the current qualifying period, even when the rescue was the 
 | D3 | No minimum | ≥10 operational decisions | One decision could clear it |
 | F | Single events cleared F1, F2 and F4; values summed across currencies; F5 needed a distribution | Minimum counts; per-currency value shares; F5 needs every capital allocation under mandate | The rungs fired on anecdotes and paid for distributions |
 | F names | "Managed P&L", "Financial Strategy" | "Managed Pricing", "Capital Allocation" | The names claimed more than the tests |
-| Integrity | Missing evidence counted as perfect; blocked attempts graded | Applicability and observation; U unless every applicable metric is observed; control effectiveness reported separately | "No evidence of misconduct" became "exemplary" |
+| O5 and N5 names | "Self-Optimizing", "Architect" | "Self-Improving", "Founder" | Plainer words for what the tests check |
+| N2 | Any sale to a ZHC, if the manifest listed any service | A sale of a service the manifest lists | The criterion said "a published service" |
+| Integrity | Missing evidence counted as perfect; blocked attempts graded; any money movement counted as an AI action | Applicability and observation: A and B need every applicable metric observed, otherwise U; decisive misconduct counts before a metric is observed; only the AI's own actions count toward the volume floor; control effectiveness reported separately | "No evidence of misconduct" became "exemplary" |
 | ZH5 name | Chartered Zero Human Company | Chartered Autonomous Company; "zero-human runtime" is a separate statement | The gates allow some human work |
-| ZH3/ZH4 sentences | "buys from the network"; "runs its strategy, people act as a board" | Match the gates exactly | Plain-language claims overstated the tests |
+| Level sentences | "buys from the network"; "runs its strategy, people act as a board"; "untouched" | Say no more than the gates test | Plain-language claims overstated the tests |
 | Scoring input | `asOf` optional; events of any company accepted | `asOf` required; every event must belong to the scored company | Old logs looked current; profiles could be relabelled |
 | Assurance | `score()` could mark a profile attested | Only a validator's verified attestation can | Self-attestation by option |
 

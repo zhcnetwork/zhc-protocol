@@ -235,7 +235,7 @@
     },
     "validator_keys": {
       "type": "array",
-      "description": "Public keys this company signs attestations with, if it acts as a validator (PROTOCOL §6.2).",
+      "description": "Public keys this company signs attestations with, if it acts as a validator (PROTOCOL §6.2), and nothing else.",
       "items": {
         "type": "object",
         "required": [
@@ -258,7 +258,7 @@
     },
     "signing_keys": {
       "type": "array",
-      "description": "Public keys that sign this company's mandates (PROTOCOL §3.5). `holder` is the issuer id used in mandates, e.g. human:owner, or an agent id that delegates.",
+      "description": "Public keys that sign this company's mandates (PROTOCOL §3.5), and nothing else. `holder` is the issuer id used in mandates, e.g. human:owner, or an agent id that delegates.",
       "items": {
         "type": "object",
         "required": [

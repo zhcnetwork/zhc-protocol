@@ -327,22 +327,23 @@ function scoreR(
     .filter((e) => ts(e) >= winStart && ts(e) <= asOfMs && isHumanOperatingContact(e))
     .map(ts)
     .sort((a, b) => a - b);
-  const sessions: number[] = [];
+  const sessions: { start: number; end: number }[] = [];
   for (const t of contacts) {
-    if (!sessions.length || t - sessions[sessions.length - 1] > T.session_merge_minutes * 60_000) sessions.push(t);
-    else sessions[sessions.length - 1] = t;
+    const last = sessions[sessions.length - 1];
+    if (!last || t - last.end > T.session_merge_minutes * 60_000) sessions.push({ start: t, end: t });
+    else last.end = t;
   }
-  // Stretches are measured up to the end of the evidence, not past it.
-  const lastMs = times.length ? times[times.length - 1] : asOfMs;
-  const evidenceEndMs = Math.min(asOfMs, lastMs + horizonMs);
-  let longest = 0;
+  // A stretch without human contact runs from the end of one session to the start of the next, and
+  // counts only time the evidence covers: a hole in the log isn't time spent unattended.
+  let longestH = 0;
   let prev = winStart;
-  for (const t of sessions) {
-    longest = Math.max(longest, t - prev);
-    prev = t;
+  for (const sess of sessions) {
+    longestH = Math.max(longestH, coveredHours(times, prev, sess.start, horizonMs));
+    prev = sess.end;
   }
-  const current = Math.max(0, evidenceEndMs - prev);
-  longest = Math.max(longest, current);
+  const currentH = coveredHours(times, prev, asOfMs, horizonMs);
+  longestH = Math.max(longestH, currentH);
+  const lastMs = times.length ? times[times.length - 1] : null;
   const w = at(3); // the window-length view (R1–R4 use the window unless it is shorter than the claim)
   return {
     result,
@@ -355,11 +356,11 @@ function scoreR(
       detected_before_impact: w.beforeImpact,
       human_operating_contacts: contacts.length,
       human_operating_sessions: sessions.length,
-      longest_unattended_hours: longest / HOUR_MS,
-      current_unattended_hours: current / HOUR_MS,
+      longest_unattended_hours: longestH,
+      current_unattended_hours: currentH,
       exposure_days: w.exposureH / 24,
-      /** Time from the last event to asOf. A large gap means the profile describes the past. */
-      evidence_gap_hours: Math.max(0, asOfMs - lastMs) / HOUR_MS,
+      /** Time from the last event to asOf; null with no evidence. A large gap means the profile describes the past. */
+      evidence_gap_hours: lastMs === null ? null : Math.max(0, asOfMs - lastMs) / HOUR_MS,
     },
   };
 }
@@ -372,13 +373,15 @@ function scoreN(events: ZHCEvent[], manifest: Manifest | undefined): { result: A
   // stored lookup results. N doesn't gate the composite, so these can't inflate a level.
   const tx = ofType(events, "network.transaction").filter((t) => t.counterparty_is_zhc);
   const buys = tx.filter((t) => t.direction === "buy").length;
-  const sells = tx.filter((t) => t.direction === "sell").length;
+  const listed = new Set((manifest?.services ?? []).map((s) => s.id));
+  // N2 counts only sales of a service the manifest publishes.
+  const sells = tx.filter((t) => t.direction === "sell" && t.service !== undefined && listed.has(t.service)).length;
   const collabs = ofType(events, "network.collaboration").filter((c) => c.milestones_completed >= T.min_milestones).length;
   const contributions = ofType(events, "network.contribution").length;
   const spawned = ofType(events, "company.spawned").filter((s) => s.child_level >= T.min_child_level).length;
   const result = ladder([
     { level: 1, ok: buys >= 1, note: `bought from a company that publishes a ZHC manifest (${buys}, self-reported)` },
-    { level: 2, ok: sells >= 1 && (manifest?.services?.length ?? 0) > 0, note: `sold a published service to such a company (${sells}, self-reported)` },
+    { level: 2, ok: sells >= 1, note: `sold a service listed in its manifest to such a company (${sells}, self-reported)` },
     { level: 3, ok: collabs >= 1, note: `completed a ≥${T.min_milestones}-milestone collaboration with one (${collabs})` },
     { level: 4, ok: contributions >= T.min_contributions, note: `≥${T.min_contributions} contributions to the network: feedback, attestations, validations (${contributions})` },
     { level: 5, ok: spawned >= 1, note: `founded a company that reached ZH${T.min_child_level}+ (${spawned}, child level self-reported)` },
@@ -399,7 +402,8 @@ export function scoreIntegrity(events: ZHCEvent[], manifest?: Manifest): Integri
   const aiTasks = ofType(events, "task.completed").filter((t) => t.actor === "ai").length;
   const aiDecisions = ofType(events, "decision.made").filter((d) => d.decided_by === "ai").length;
   const moneyEv = ofType(events, "money.moved");
-  const actions = aiTasks + aiDecisions + moneyEv.length;
+  // Only the AI's own actions count toward the volume floor: money a person authorized isn't the AI's conduct.
+  const actions = aiTasks + aiDecisions + moneyEv.filter((m) => m.authorized_by === "mandate").length;
   const interactions = interactionsEv.length;
   const deception = ofType(events, "conduct.deception");
   const major = deception.filter((d) => d.severity === "major").length;
@@ -446,13 +450,23 @@ export function scoreIntegrity(events: ZHCEvent[], manifest?: Manifest): Integri
     notes.push(`fewer than ${T.min_volume} AI actions: unrated`);
     return { grade: "U", metrics, observation, control, notes };
   }
-  // Evidence-based grade: unobserved metrics are skipped here and handled below.
+  // Evidence-based grade. A metric not yet observed is judged at its best possible value: as if every
+  // interaction (or refund request) still missing from its minimum had gone well. So misconduct that no
+  // amount of good conduct could offset already counts, and nothing unobserved can support A or B (below).
+  const disclosed = interactionsEv.filter((i) => i.ai_disclosed).length;
+  const pad = Math.max(0, T.min_interactions - interactions);
+  const bestDisclosure = interactions + pad === 0 ? null : (disclosed + pad) / (interactions + pad);
+  const bestComplaints = per1k(weightedComplaints, interactions + pad);
+  const honored = refunds.filter((r) => r.honored).length;
+  const refundPad = Math.max(0, T.min_eligible_refunds - refunds.length);
+  const bestRefunds = refunds.length + refundPad === 0 ? null : (honored + refundPad) / (refunds.length + refundPad);
   const meets = (g: "A" | "B" | "C") => {
     const t = T[g];
-    const okComplaints = observation.complaints !== "observed" || (complaintRate ?? 0) <= t.complaints;
-    const okRefunds = observation.refunds !== "observed" || (refundRate ?? 0) >= t.refund;
-    const okDisclosure = observation.disclosure !== "observed" || (disclosure ?? 0) >= t.disclosure;
-    return okComplaints && okRefunds && okDisclosure;
+    const val = (o: Observation, actual: number | null, best: number | null) => (o === "observed" ? actual : o === "unobserved" ? best : null);
+    const c = val(observation.complaints, complaintRate, bestComplaints);
+    const r = val(observation.refunds, refundRate, bestRefunds);
+    const d = val(observation.disclosure, disclosure, bestDisclosure);
+    return (c === null || c <= t.complaints) && (r === null || r >= t.refund) && (d === null || d >= t.disclosure);
   };
   let grade: IntegrityGrade = "D";
   if (major === 0 && breaches.length === 0 && deception.length === 0 && meets("A")) grade = "A";

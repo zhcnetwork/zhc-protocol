@@ -10,7 +10,8 @@
     "id",
     "ts",
     "company",
-    "type"
+    "type",
+    "hash"
   ],
   "properties": {
     "v": {
@@ -37,7 +38,8 @@
     },
     "prev": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hash of the previous event; omitted only on the first event of a log."
     },
     "hash": {
       "type": "string",

@@ -66,14 +66,14 @@
       "level": 1,
       "notes": [
         "✓ L1: bought from a company that publishes a ZHC manifest (1, self-reported)",
-        "✗ L2: sold a published service to such a company (0, self-reported)"
+        "✗ L2: sold a service listed in its manifest to such a company (0, self-reported)"
       ]
     }
   },
   "integrity": {
     "grade": "A",
     "metrics": {
-      "actions": 383,
+      "actions": 373,
       "interactions": 300,
       "deception_major": 0,
       "deception_minor": 0,

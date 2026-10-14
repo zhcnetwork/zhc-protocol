@@ -11,11 +11,12 @@ import {
   canonicalJSON,
   formatProfile,
   issueAttestation,
-  manifestKeyResolver,
+  mandateKeyResolver,
   profileId,
   score,
   seal,
   signMandate,
+  validatorKeyResolver,
   verifyAttestation,
   verifyChain,
   verifyMandate,
@@ -126,7 +127,7 @@ const attestation = issueAttestation({
   manifestSha256: sha256(canonicalJSON(testCompany)),
   independence: { common_control: false, fee_depends_on_outcome: false, note: "Example. The subject paid a flat fee agreed before the assessment." },
 });
-assertOk("attestation", verifyAttestation(attestation, { resolveKey: manifestKeyResolver(validator), now: "2026-09-02T00:00:00.000Z" }));
+assertOk("attestation", verifyAttestation(attestation, { resolveKey: validatorKeyResolver(validator), now: "2026-09-02T00:00:00.000Z" }));
 emit("attestation.sample.json", `${JSON.stringify(attestation, null, 2)}\n`);
 
 // 4. The Rating Desk's billing mandate, signed by its accountable human.
@@ -140,7 +141,7 @@ emitJSON("rating-desk.zhc.json", desk);
 const mandateUrl = new URL("billing.mandate.json", OUT);
 const { signature: _old, ...unsigned } = JSON.parse(readFileSync(mandateUrl, "utf8")) as Mandate;
 const mandate = signMandate(unsigned, ownerKey.privateKey, "accountable-2026-10");
-assertOk("mandate signature", verifyMandate(mandate, manifestKeyResolver(desk)));
+assertOk("mandate signature", verifyMandate(mandate, mandateKeyResolver(desk)));
 emitJSON("billing.mandate.json", mandate);
 
 if (stale.length) {
